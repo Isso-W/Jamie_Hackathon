@@ -75,6 +75,7 @@ COVER_COLORS = ["#4f46e5", "#0f766e", "#c2410c", "#be185d", "#1d4ed8", "#7c3aed"
 WAITING = "⏳ Awaiting requester's answer"
 KB_TABS = ["📋 Overview", "📄 Document", "🖥️ Demo", "💬 Ask", "🕒 Timeline"]
 KB_SORTS = ["Recently updated", "Deadline soonest", "Name"]
+KB_LAYOUTS = ["🕸️ Map", "🗂️ Cards"]
 ALL_KB = "__all__"  # Marker in kb_chat for cross-project Q&A
 ALL_QS = [
     "Which projects still have questions waiting for the requester?",
@@ -483,6 +484,7 @@ for k, v in {**TASK_DEFAULTS, **KB_DEFAULTS}.items():
 st.session_state.setdefault("project", "Demo Project")
 st.session_state.setdefault("page", PAGES[0])
 st.session_state.setdefault("kb_tab", KB_TABS[0])
+st.session_state.setdefault("kb_layout", KB_LAYOUTS[0])
 S = st.session_state
 
 
@@ -833,6 +835,305 @@ def segmented(label_: str, options: list, key: str):
     return v or options[0]
 
 
+# ---------- Knowledge map: floating tree (knowledge base -> projects -> tasks -> records) ----------
+
+KB_MAP_CSS = """
+.kbm {position: relative; width: 100%; border: 1px solid rgba(128,128,128,.25); border-radius: 14px; overflow: hidden;
+      background: radial-gradient(circle, rgba(128,128,128,.16) 1px, transparent 1.2px) 0 0 / 22px 22px;
+      font-family: var(--st-font, "Source Sans Pro", sans-serif); color: var(--st-text-color, #31333f);}
+svg {display: block; touch-action: none; user-select: none;}
+.link {fill: none; stroke-width: 1.6; opacity: .45; transition: opacity .25s, stroke-width .25s;}
+.link.flow {stroke-dasharray: 5 6; animation: flow 1.1s linear infinite; opacity: .8;}
+@keyframes flow {to {stroke-dashoffset: -22;}}
+.node {cursor: default; transition: opacity .25s;}
+.node.act {cursor: pointer;}
+.node .body {transition: transform .25s cubic-bezier(.3,1.6,.5,1);}
+.node:hover .body {transform: scale(1.18);}
+.node text {fill: currentColor; font-size: 12px; pointer-events: none;}
+.node .initial {fill: #fff; font-weight: 700; font-size: 20px;}
+.node .lbl-project {font-weight: 600; font-size: 13px;}
+.node .lbl-root {font-weight: 700; font-size: 14px;}
+.node .lbl-task {font-size: 11.5px; opacity: .85;}
+.halo {fill: none; stroke: #f59e0b; stroke-width: 2; animation: pulse 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center;}
+@keyframes pulse {from {transform: scale(1); opacity: .9;} to {transform: scale(1.9); opacity: 0;}}
+svg.focus .link {opacity: .1;}
+svg.focus .node {opacity: .3;}
+svg.focus .link.hot {opacity: .95; stroke-width: 2.4;}
+svg.focus .node.hot {opacity: 1;}
+.tip {position: absolute; pointer-events: none; max-width: 260px; padding: 8px 11px; border-radius: 10px; font-size: 12.5px;
+      background: var(--st-background-color, #fff); border: 1px solid rgba(128,128,128,.3); box-shadow: 0 6px 22px rgba(0,0,0,.14);
+      opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; line-height: 1.4;}
+.tip.on {opacity: 1; transform: none;}
+.tip b {display: block; font-size: 13px; margin-bottom: 2px;}
+.tip div {opacity: .75;}
+.tip i {display: block; margin-top: 4px; font-style: normal; color: var(--st-primary-color, #4f46e5); font-size: 11.5px;}
+.legend {position: absolute; left: 12px; bottom: 9px; display: flex; gap: 12px; font-size: 11.5px; opacity: .75; flex-wrap: wrap;}
+.legend span::before {content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--c);}
+.hint {position: absolute; right: 12px; top: 9px; font-size: 11.5px; opacity: .55;}
+"""
+
+KB_MAP_JS = r"""
+const NS = 'http://www.w3.org/2000/svg';
+const ITEM = {req: '#a78bfa', brief: '#22c55e', demo: '#3b82f6', qa: '#94a3b8', waiting: '#f59e0b'};
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+export default function (component) {
+  const { data, parentElement, setTriggerValue } = component;
+  const box = parentElement.querySelector('.kbm');
+  if (!box || !data || !data.tree) return;
+  box.replaceChildren();
+  const H = data.height || 560;
+  box.style.height = H + 'px';
+  const svg = el('svg', {width: '100%', height: H}, box);
+  const gLinks = el('g', {}, svg), gNodes = el('g', {}, svg);
+  const tip = document.createElement('div');
+  tip.className = 'tip';
+  box.appendChild(tip);
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  for (const [k, name] of [['req', 'Requirement'], ['brief', 'Brief'], ['demo', 'Demo'], ['qa', 'Q&A'], ['waiting', 'Awaiting answer']]) {
+    const s = document.createElement('span');
+    s.style.setProperty('--c', ITEM[k]);
+    s.textContent = name;
+    legend.appendChild(s);
+  }
+  box.appendChild(legend);
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = data.hint || '';
+  box.appendChild(hint);
+
+  // Flatten the tree; every node floats around an anchor from a radial layout
+  const nodes = [], links = [];
+  (function walk(n, depth, parent) {
+    const node = Object.assign({}, n, {depth, parent, kids: [], ph: Math.random() * 6.28, sp: 0.5 + Math.random() * 0.5, ox: 0, oy: 0});
+    nodes.push(node);
+    if (parent) { parent.kids.push(node); links.push({a: parent, b: node}); }
+    (n.children || []).forEach(c => walk(c, depth + 1, node));
+  })(data.tree, 0, null);
+  const weight = n => (n.w = n.kids.length ? n.kids.reduce((s, k) => s + weight(k), 0) : 1);
+  weight(nodes[0]);
+  // Layout: children of the root sit on a ring; deeper nodes fan out around their own parent, so each project is a cluster
+  function layout() {
+    const W = box.clientWidth || 800, cx = W / 2, cy = H / 2 - 8;
+    const rx = Math.max(W / 2 - 80, 60), ry = H / 2 - 52, m = Math.min(rx, ry);
+    const LEN = [0, 0, Math.min(Math.max(m * 0.5, 70), 170), Math.min(Math.max(m * 0.24, 40), 80)];
+    const root = nodes[0];
+    const single = root.kids.length === 1;  // A lone child sits beside the root so its own fan gets the room
+    root.angle = 0; root.ax = single ? cx - rx * 0.4 : cx; root.ay = cy;
+    let s = -Math.PI / 2;
+    for (const k of root.kids) {
+      const span = 2 * Math.PI * k.w / root.w;
+      const a = single ? 0 : s + span / 2;
+      k.angle = a; k.span = single ? Math.PI * 1.6 : span;
+      k.ax = single ? cx + rx * 0.05 : cx + Math.cos(a) * rx * 0.56;
+      k.ay = single ? cy : cy + Math.sin(a) * ry * 0.56;
+      s += span;
+      fan(k);
+    }
+    function fan(n) {
+      if (!n.kids.length) return;
+      const spread = Math.min(Math.max(n.span, Math.PI * (n.depth === 1 ? 0.9 : 1.1)), 2 * Math.PI * (1 - 1 / (n.kids.length + 1)));
+      const L = LEN[n.depth + 1] || 36;
+      let a0 = n.angle - spread / 2;
+      for (const k of n.kids) {
+        const span = spread * k.w / n.w, a = n.kids.length === 1 ? n.angle : a0 + span / 2;
+        k.angle = a; k.span = span;
+        k.ax = Math.min(Math.max(n.ax + Math.cos(a) * L, 20), W - 20);
+        k.ay = Math.min(Math.max(n.ay + Math.sin(a) * L, 20), H - 40);
+        a0 += span;
+        fan(k);
+      }
+    }
+  }
+  layout();
+
+  const R = {root: 34, project: 26, task: 12, item: 6};
+  for (const l of links) {
+    l.path = el('path', {class: 'link' + (l.b.kind === 'waiting' ? ' flow' : ''), stroke: l.b.kind in ITEM ? ITEM[l.b.kind] : (l.b.color || '#888')}, gLinks);
+  }
+  for (const n of nodes) {
+    const kind = n.kind in ITEM ? 'item' : n.kind;
+    n.r = R[kind];
+    n.g = el('g', {class: 'node' + (n.action ? ' act' : '')}, gNodes);
+    const body = el('g', {class: 'body'}, n.g);
+    if (n.alert) el('circle', {r: n.r, class: 'halo'}, body);
+    if (kind === 'root') {
+      el('circle', {r: n.r, fill: n.color, opacity: .95}, body);
+      el('circle', {r: n.r + 6, fill: 'none', stroke: n.color, 'stroke-opacity': .25, 'stroke-width': 6}, body);
+      el('text', {class: 'initial', 'text-anchor': 'middle', dy: '.35em'}, body).textContent = '📚';
+    } else if (kind === 'project') {
+      el('circle', {r: n.r, fill: n.color}, body);
+      const ring = 2 * Math.PI * (n.r + 5);
+      el('circle', {r: n.r + 5, fill: 'none', stroke: n.color, 'stroke-opacity': .18, 'stroke-width': 3}, body);
+      el('circle', {r: n.r + 5, fill: 'none', stroke: '#22c55e', 'stroke-width': 3, 'stroke-linecap': 'round',
+                    'stroke-dasharray': `${ring * (n.progress || 0)} ${ring}`, transform: 'rotate(-90)'}, body);
+      el('text', {class: 'initial', 'text-anchor': 'middle', dy: '.35em'}, body).textContent = n.initial || '';
+    } else if (kind === 'task') {
+      el('circle', {r: n.r, fill: n.color, 'fill-opacity': .22, stroke: n.color, 'stroke-width': 2.2}, body);
+    } else {
+      el('circle', {r: n.r, fill: ITEM[n.kind]}, body);
+    }
+    if (kind !== 'item') {
+      n.text = el('text', {class: 'lbl-' + kind}, n.g);
+      n.text.textContent = n.label;
+    }
+    // Hover: light up the node, its path to the root and its children
+    n.g.addEventListener('pointerenter', () => {
+      svg.classList.add('focus');
+      const hot = new Set([n, ...n.kids]);
+      for (let p = n.parent; p; p = p.parent) hot.add(p);
+      nodes.forEach(m => m.g.classList.toggle('hot', hot.has(m)));
+      links.forEach(l => l.path.classList.toggle('hot', hot.has(l.a) && hot.has(l.b)));
+      tip.replaceChildren();
+      const b = document.createElement('b');
+      b.textContent = n.title || n.label;
+      tip.appendChild(b);
+      (n.meta || []).forEach(t => { const d = document.createElement('div'); d.textContent = t; tip.appendChild(d); });
+      if (n.action) { const i = document.createElement('i'); i.textContent = n.cta || 'Click to open →'; tip.appendChild(i); }
+      tip.classList.add('on');
+      hovered = n;
+    });
+    n.g.addEventListener('pointerleave', () => {
+      svg.classList.remove('focus');
+      tip.classList.remove('on');
+      hovered = null;
+    });
+    // Drag to rearrange; a press without movement counts as a click
+    n.g.addEventListener('pointerdown', e => {
+      drag = {n, x: e.clientX, y: e.clientY, ox: n.ox, oy: n.oy, moved: false};
+      n.g.setPointerCapture(e.pointerId);
+    });
+    n.g.addEventListener('pointermove', e => {
+      if (!drag || drag.n !== n) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      n.ox = drag.ox + dx;
+      n.oy = drag.oy + dy;
+    });
+    n.g.addEventListener('pointerup', () => {
+      if (drag && drag.n === n && !drag.moved && n.action) setTriggerValue('open', JSON.stringify(n.action));
+      drag = null;
+    });
+  }
+  let drag = null, hovered = null;
+
+  // Animation: nodes fly out from the root, then float gently around their anchors
+  const t0 = performance.now();
+  const ease = k => 1 - Math.pow(1 - Math.min(Math.max(k, 0), 1), 3);
+  let raf;
+  function frame(now) {
+    const t = (now - t0) / 1000, root = nodes[0];
+    for (const n of nodes) {
+      const k = ease((t - n.depth * 0.12) / 0.9);
+      const still = drag && drag.n === n;
+      const amp = n.depth === 0 ? 2 : 3 + n.depth * 1.5;
+      const fx = still ? 0 : Math.sin(t * n.sp + n.ph) * amp, fy = still ? 0 : Math.cos(t * n.sp * 0.8 + n.ph) * amp;
+      n.x = root.ax + (n.ax + n.ox - root.ax) * k + fx;
+      n.y = root.ay + (n.ay + n.oy - root.ay) * k + fy;
+      n.g.setAttribute('transform', `translate(${n.x},${n.y})`);
+      n.g.style.opacity = k < 1 ? k : '';
+      if (n.text) {
+        if (n.depth === 0 || n.kind === 'project') {
+          n.text.setAttribute('x', 0); n.text.setAttribute('y', n.r + 18); n.text.setAttribute('text-anchor', 'middle');
+        } else {
+          // Label points away from the parent; near an edge it drops below the node instead
+          const W = box.clientWidth, out = Math.cos(n.angle) >= 0;
+          const side = out ? (n.x < W - 150 ? 1 : 0) : (n.x > 150 ? -1 : 0);
+          n.text.setAttribute('x', side * (n.r + 6)); n.text.setAttribute('y', side ? 4 : n.r + 14);
+          n.text.setAttribute('text-anchor', side > 0 ? 'start' : side < 0 ? 'end' : 'middle');
+        }
+      }
+    }
+    for (const l of links) {
+      const {a, b} = l, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y;
+      l.path.setAttribute('d', `M${a.x},${a.y} Q${mx - dy * 0.12},${my + dx * 0.12} ${b.x},${b.y}`);
+    }
+    if (hovered) {
+      const W = box.clientWidth, left = Math.min(hovered.x + hovered.r + 12, W - 270);
+      tip.style.left = Math.max(left, 6) + 'px';
+      tip.style.top = Math.max(hovered.y - 20, 6) + 'px';
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
+  const ro = new ResizeObserver(layout);
+  ro.observe(box);
+  return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+}
+"""
+
+if hasattr(st.components, "v2"):
+    kb_map_component = st.components.v2.component("kb_map", html='<div class="kbm"></div>', css=KB_MAP_CSS, js=KB_MAP_JS)
+else:  # Older Streamlit: the map is skipped and the cards are used instead
+    kb_map_component = None
+
+
+def short(text: str, n: int = 24) -> str:
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def map_task_node(proj: str, group: list, color: str) -> dict:
+    qas = [d for d in group if d["type"] == "Q&A"]
+    waiting = [d for d in qas if d["content"].startswith(WAITING)]
+    items = []
+    for d in group:
+        if d["type"] == "Task":
+            items.append({"kind": "req", "label": "Requirement", "meta": [short(d["content"].split("\n\n")[0], 140)],
+                          "action": {"project": proj, "tab": KB_TABS[1]}, "cta": "Click to read the document →"})
+        elif d["type"] == "Brief":
+            items.append({"kind": "brief", "label": "Task brief", "meta": [f"Written {d['time']:%m-%d %H:%M}"],
+                          "action": {"project": proj, "tab": KB_TABS[1]}, "cta": "Click to read the brief →"})
+        elif d["type"] == "Demo":
+            items.append({"kind": "demo", "label": "Requirement demo", "meta": [f"Generated {d['time']:%m-%d %H:%M}"],
+                          "action": {"project": proj, "tab": KB_TABS[2]}, "cta": "Click to try the demo →"})
+    for d in qas[-6:]:  # Keep the map readable: the latest Q&A only
+        w = d in waiting
+        items.append({"kind": "waiting" if w else "qa", "label": d["title"],
+                      "meta": ["Waiting for the requester" if w else short(d["content"], 140)],
+                      "action": {"project": proj, "tab": KB_TABS[0] if w else KB_TABS[1]}})
+    meta = [f"{len(qas)} Q&A" + (f" · {len(waiting)} awaiting answer" if waiting else ""),
+            "Brief written" if any(d["type"] == "Brief" for d in group) else "No brief yet"]
+    return {"kind": "task", "label": short(group[-1]["task"]), "title": group[-1]["task"], "color": color, "meta": meta,
+            "alert": bool(waiting), "action": {"project": proj, "tab": KB_TABS[0]}, "children": items}
+
+
+def map_project_node(proj: str, with_tasks: bool = True) -> dict:
+    ps = project_stats(proj)
+    color = project_color(proj)
+    ddl, _ = deadline_status(S.projects[proj]["deadline"])
+    docs = project_docs(proj)
+    tasks = [map_task_node(proj, [d for d in docs if d.get("task_id") == tid], color)
+             for tid in dict.fromkeys(d.get("task_id") for d in docs)] if with_tasks else []
+    return {
+        "kind": "project", "label": short(proj, 20), "title": proj, "initial": proj[:1], "color": color,
+        "progress": ps["briefs"] / ps["tasks"] if ps["tasks"] else 0, "alert": bool(ps["waiting"]),
+        "meta": [ddl, f"{ps['tasks']} task(s) · {len(ps['qas'])} Q&A · {ps['briefs']} brief(s)",
+                 f"Updated {ps['updated']:%m-%d %H:%M}"] + ([f"⏳ {len(ps['waiting'])} awaiting answer"] if ps["waiting"] else []),
+        "action": {"project": proj, "tab": KB_TABS[0]}, "cta": "Click to open project details →", "children": tasks,
+    }
+
+
+def on_map_click(key: str):
+    hit = (st.session_state.get(key) or {}).get("open")
+    if hit:
+        a = json.loads(hit)
+        if a.get("project") in S.projects:
+            open_project(a["project"], a.get("tab"))
+
+
+def kb_map(tree: dict, key: str, height: int = 560, hint: str = ""):
+    """Floating, draggable tree; clicking a node opens that project (and the matching section)."""
+    kb_map_component(data={"tree": tree, "height": height, "hint": hint}, key=key,
+                     on_open_change=lambda: on_map_click(key))
+
+
 # ---------- Pages ----------
 
 st.set_page_config(page_title="Requirement Clarifier", page_icon="🧭", layout="wide")
@@ -1112,29 +1413,42 @@ else:  # Project Knowledge Base
         m[2].metric("Q&A captured", sum(len(v["qas"]) for v in all_stats.values()))
         m[3].metric("Awaiting requester", waiting_total)
 
-        gallery, chat = st.columns([2, 1], gap="large")
+        st.subheader("All projects")
+        st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on.")
+        f0, f1, f2, f3 = st.columns([2, 3, 2, 2], vertical_alignment="center")
+        with f0:
+            layout = segmented("Layout", KB_LAYOUTS, "kb_layout") if kb_map_component else KB_LAYOUTS[1]
+        query = f1.text_input("Search", key="kb_query", placeholder="🔍 Search projects and tasks", label_visibility="collapsed")
+        sort = f2.selectbox("Sort", KB_SORTS, key="kb_sort", label_visibility="collapsed",
+                            disabled=layout == KB_LAYOUTS[0], help="Card order (the map arranges itself)")
+        only_waiting = f3.toggle("Needs answers", key="kb_waiting_only", disabled=not waiting_total,
+                                 help="Only projects with questions waiting for the requester")
+
+        q_ = query.strip().lower()
+        names = [p for p in S.projects
+                 if (not q_ or q_ in p.lower() or any(q_ in d["task"].lower() for d in project_docs(p)))
+                 and (not only_waiting or all_stats[p]["waiting"])]
+        if sort == "Deadline soonest":
+            names.sort(key=lambda p: S.projects[p]["deadline"] or date.max)
+        elif sort == "Name":
+            names.sort(key=str.lower)
+        else:
+            names.sort(key=lambda p: all_stats[p]["updated"], reverse=True)
+
+        # The map gets the full width with the cross-project chat below it; cards keep the chat in a side column
+        if layout == KB_LAYOUTS[0]:
+            gallery, chat = st.container(), st.container()
+        else:
+            gallery, chat = st.columns([2, 1], gap="large")
         with gallery:
-            st.subheader("All projects")
-            st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on.")
-            f1, f2, f3 = st.columns([3, 2, 2], vertical_alignment="center")
-            query = f1.text_input("Search", key="kb_query", placeholder="🔍 Search projects and tasks", label_visibility="collapsed")
-            sort = f2.selectbox("Sort", KB_SORTS, key="kb_sort", label_visibility="collapsed")
-            only_waiting = f3.toggle("Needs answers", key="kb_waiting_only", disabled=not waiting_total,
-                                     help="Only projects with questions waiting for the requester")
-
-            q_ = query.strip().lower()
-            names = [p for p in S.projects
-                     if (not q_ or q_ in p.lower() or any(q_ in d["task"].lower() for d in project_docs(p)))
-                     and (not only_waiting or all_stats[p]["waiting"])]
-            if sort == "Deadline soonest":
-                names.sort(key=lambda p: S.projects[p]["deadline"] or date.max)
-            elif sort == "Name":
-                names.sort(key=str.lower)
-            else:
-                names.sort(key=lambda p: all_stats[p]["updated"], reverse=True)
-
             if not names:
                 st.info("No project matches the current filter.")
+            elif layout == KB_LAYOUTS[0]:
+                tree = {"kind": "root", "label": "Knowledge base", "color": "#4f46e5",
+                        "meta": [f"{len(names)} project(s) shown", f"{waiting_total} question(s) awaiting the requester"],
+                        "children": [map_project_node(n) for n in names]}
+                kb_map(tree, "kb_map_all", height=600, hint="Hover to explore · drag to move · click to open")
+                names = []  # The map replaces the cards
             per_row = 3
             for start in range(0, len(names), per_row):
                 cols = st.columns(per_row)
@@ -1207,7 +1521,9 @@ else:  # Project Knowledge Base
     tab = segmented("Section", KB_TABS, "kb_tab")
     st.write("")
 
-    if tab == KB_TABS[0]:  # Overview: one card per task
+    if tab == KB_TABS[0]:  # Overview: the project's map, then one card per task
+        if kb_map_component:
+            kb_map(map_project_node(proj), f"kb_map_{proj}", height=420, hint="Click a task or record to jump to it")
         for n, tid in enumerate(reversed(task_ids), 1):
             group = [d for d in docs if d.get("task_id") == tid]
             kinds = {d["type"] for d in group}
