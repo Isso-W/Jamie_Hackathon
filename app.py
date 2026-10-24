@@ -73,6 +73,8 @@ PAGES = ["Requester", "Worker", "Project Knowledge Base"]
 STEPS = ["Post task", "AI questions", "Task brief", "Requirement demo", "Worker Q&A", "Knowledge captured"]
 COVER_COLORS = ["#4f46e5", "#0f766e", "#c2410c", "#be185d", "#1d4ed8", "#7c3aed", "#15803d", "#b45309"]
 WAITING = "⏳ Awaiting requester's answer"
+KB_TABS = ["📋 Overview", "📄 Document", "🖥️ Demo", "💬 Ask", "🕒 Timeline"]
+KB_SORTS = ["Recently updated", "Deadline soonest", "Name"]
 ALL_KB = "__all__"  # Marker in kb_chat for cross-project Q&A
 ALL_QS = [
     "Which projects still have questions waiting for the requester?",
@@ -480,6 +482,7 @@ for k, v in {**TASK_DEFAULTS, **KB_DEFAULTS}.items():
     st.session_state.setdefault(k, fresh(v))
 st.session_state.setdefault("project", "Demo Project")
 st.session_state.setdefault("page", PAGES[0])
+st.session_state.setdefault("kb_tab", KB_TABS[0])
 S = st.session_state
 
 
@@ -502,8 +505,9 @@ def goto(page: str):
     S.page = page
 
 
-def open_project(name):
+def open_project(name, tab: str = None):
     S.kb_open = name
+    S.kb_tab = tab or KB_TABS[0]
     S.page = "Project Knowledge Base"
 
 
@@ -583,8 +587,12 @@ def project_docs(proj: str) -> list:
     return [d for d in S.docs if d["project"] == proj]
 
 
-def project_doc_md(proj: str) -> str:
-    """Combine all of a project's records into one document: one section per task, each with requirement, brief, demo and all Q&A."""
+DOC_SECTIONS = ["Requirement & understanding", "Task brief", "Requirement demo", "Q&A log"]
+
+
+def project_doc_md(proj: str, task_id=None, sections=DOC_SECTIONS) -> str:
+    """Combine all of a project's records into one document: one section per task, each with requirement, brief, demo and all Q&A.
+    task_id / sections narrow it down for reading in the UI; the AI always gets the full document."""
     info = S.projects[proj]
     docs = project_docs(proj)
     meta = f"Created {info['created']:%Y-%m-%d %H:%M} · Deadline {info['deadline'] or 'not set'}"
@@ -592,17 +600,19 @@ def project_doc_md(proj: str) -> str:
         meta += f" · Last updated {max(d['time'] for d in docs):%m-%d %H:%M}"
     lines = [f"### {proj}", meta]
     for n, tid in enumerate(dict.fromkeys(d.get("task_id") for d in docs), 1):
+        if task_id is not None and tid != task_id:
+            continue
         group = [d for d in docs if d.get("task_id") == tid]
         main = {d["type"]: d for d in group if d["type"] in ("Task", "Brief", "Demo")}
         lines.append(f"#### Task {n}: {group[-1]['task']}")
-        if "Task" in main:
-            lines += ["##### Requirement & understanding", main["Task"]["content"]]
-        if "Brief" in main:
-            lines += ["##### Task brief", main["Brief"]["content"]]
-        if "Demo" in main:
-            lines += ["##### Requirement demo", f"Generated ({main['Demo']['time']:%m-%d %H:%M}); preview or download it under \"Requirement demo\" on this page."]
+        if "Task" in main and DOC_SECTIONS[0] in sections:
+            lines += [f"##### {DOC_SECTIONS[0]}", main["Task"]["content"]]
+        if "Brief" in main and DOC_SECTIONS[1] in sections:
+            lines += [f"##### {DOC_SECTIONS[1]}", main["Brief"]["content"]]
+        if "Demo" in main and DOC_SECTIONS[2] in sections:
+            lines += [f"##### {DOC_SECTIONS[2]}", f"Generated ({main['Demo']['time']:%m-%d %H:%M}); preview or download it in the \"Demo\" tab of this project."]
         qas = [d for d in group if d["type"] == "Q&A"]
-        if qas:
+        if qas and DOC_SECTIONS[3] in sections:
             lines.append(f"##### Q&A log ({len(qas)})")
             lines += [f"**Q: {d['title']}**  \n{d['content']}  \n<small>{d['time']:%m-%d %H:%M}</small>" for d in qas]
     return "\n\n".join(lines)
@@ -640,6 +650,25 @@ CSS = """
 .cover-sub {font-size: .8rem; color: rgba(128,128,128,.95); margin: 2px 0 6px; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;}
 .cover-body .pill {margin: 0 4px 0 0;}
+.cover-meter {height: 4px; border-radius: 2px; background: rgba(128,128,128,.18); margin: 8px 0 2px; overflow: hidden;}
+.cover-meter div {height: 100%; background: #22c55e;}
+.cover-foot {display: flex; justify-content: space-between; white-space: nowrap; font-size: .72rem; color: rgba(128,128,128,.95);}
+.pill.warn {background: rgba(245,158,11,.16); color: #d97706;}
+.pill.bad {background: rgba(239,68,68,.14); color: #dc2626;}
+.pill.ok {background: rgba(34,197,94,.14); color: #16a34a;}
+.ddl {padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.22);}
+.hero {border-radius: 14px; padding: 18px 22px; color: #fff; margin: .4rem 0 1rem; display: flex; gap: 18px; align-items: center;}
+.hero-mark {flex: 0 0 56px; height: 56px; border-radius: 12px; background: rgba(255,255,255,.18); display: flex;
+            align-items: center; justify-content: center; font-size: 1.8rem; font-weight: 700;}
+.hero h2 {margin: 0; padding: 0; color: #fff; font-size: 1.6rem;}
+.hero-meta {font-size: .86rem; opacity: .88; margin-top: 2px;}
+.hero .ddl {margin-left: auto; font-size: .85rem; white-space: nowrap;}
+.task-card-head {display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;}
+.task-card-head b {font-size: 1.02rem;}
+.task-card-head small {color: rgba(128,128,128,.95); margin-left: auto;}
+.qa-row {padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25); font-size: .9rem;}
+.qa-row:last-child {border-bottom: none;}
+.qa-row small {color: rgba(128,128,128,.95);}
 </style>
 """
 
@@ -722,27 +751,86 @@ def preset_buttons(questions: list, prefix: str):
     return picked
 
 
-def cover_html(proj: str) -> str:
+def project_color(proj: str) -> str:
+    return COVER_COLORS[int(hashlib.md5(proj.encode("utf-8")).hexdigest(), 16) % len(COVER_COLORS)]
+
+
+def deadline_status(ddl):
+    """(label, pill class) for a deadline: overdue and due within 3 days stand out."""
+    if not ddl:
+        return "No deadline", ""
+    days = (ddl - date.today()).days
+    if days < 0:
+        return f"Overdue {-days}d", "bad"
+    if days == 0:
+        return "Due today", "bad"
+    if days <= 3:
+        return f"Due in {days}d", "warn"
+    return f"Due {ddl:%m-%d}", "ok"
+
+
+def project_stats(proj: str) -> dict:
     docs = project_docs(proj)
-    info = S.projects[proj]
-    n_tasks = len(dict.fromkeys(d.get("task_id") for d in docs))
+    events = [e for e in S.events if e["project"] == proj]
     qas = [d for d in docs if d["type"] == "Q&A"]
-    waiting = sum(d["content"].startswith(WAITING) for d in qas)
-    latest = max(docs, key=lambda d: d["time"]) if docs else None
-    color = COVER_COLORS[int(hashlib.md5(proj.encode("utf-8")).hexdigest(), 16) % len(COVER_COLORS)]
-    ddl = f"Due {info['deadline']:%m-%d}" if info["deadline"] else "No deadline"
-    tags = [f'<span class="pill">{n_tasks} task(s)</span>', f'<span class="pill">{len(qas)} Q&amp;A</span>']
-    if any(d["type"] == "Demo" for d in docs):
-        tags.append('<span class="pill">Has demo</span>')
-    if waiting:
-        tags.append(f'<span class="pill">{WAITING} {waiting}</span>')
-    sub = f"Latest: {latest['task']}" if latest else "No records yet"
+    done = {}
+    for e in events:  # Last state of each checkbox wins
+        if e["type"] in ("Subtask done", "Subtask reopened"):
+            done[(e["task"], e["text"])] = e["type"] == "Subtask done"
+    times = [d["time"] for d in docs] + [e["time"] for e in events]
+    return {
+        "tasks": len(dict.fromkeys(d.get("task_id") for d in docs)),
+        "qas": qas,
+        "waiting": [d for d in qas if d["content"].startswith(WAITING)],
+        "briefs": sum(d["type"] == "Brief" for d in docs),
+        "demos": [d for d in docs if d["type"] == "Demo"],
+        "done": sum(done.values()),
+        "events": events,
+        "updated": max(times) if times else S.projects[proj]["created"],
+        "latest": max(docs, key=lambda d: d["time"])["task"] if docs else "",
+    }
+
+
+def cover_html(proj: str) -> str:
+    ps = project_stats(proj)
+    ddl, ddl_cls = deadline_status(S.projects[proj]["deadline"])
+    tags = [f'<span class="pill">{ps["tasks"]} task(s)</span>', f'<span class="pill">{len(ps["qas"])} Q&amp;A</span>']
+    if ps["demos"]:
+        tags.append('<span class="pill ok">Has demo</span>')
+    if ps["waiting"]:
+        tags.append(f'<span class="pill warn">{len(ps["waiting"])} awaiting answer</span>')
+    # Progress: briefs written out of tasks posted (a task without a brief isn't ready to start)
+    pct = round(100 * ps["briefs"] / ps["tasks"]) if ps["tasks"] else 0
+    sub = f"Latest: {ps['latest']}" if ps["latest"] else "No records yet"
     return (
-        f'<div class="cover"><div class="cover-band" style="background:{color}">'
-        f'<b>{htmllib.escape(proj[:1])}</b><i>{ddl}</i></div>'
+        f'<div class="cover"><div class="cover-band" style="background:{project_color(proj)}">'
+        f'<b>{htmllib.escape(proj[:1])}</b><i class="ddl">{ddl}</i></div>'
         f'<div class="cover-body"><div class="cover-title">{htmllib.escape(proj)}</div>'
-        f'<div class="cover-sub">{htmllib.escape(sub)}</div>{"".join(tags)}</div></div>'
+        f'<div class="cover-sub">{htmllib.escape(sub)}</div>{"".join(tags)}'
+        f'<div class="cover-meter"><div style="width:{pct}%"></div></div>'
+        f'<div class="cover-foot"><span>{ps["briefs"]}/{ps["tasks"]} briefed · {ps["done"]} done</span>'
+        f'<span>{ps["updated"]:%m-%d %H:%M}</span></div></div></div>'
     )
+
+
+def hero_html(proj: str) -> str:
+    info = S.projects[proj]
+    ddl, _ = deadline_status(info["deadline"])
+    ps = project_stats(proj)
+    meta = f"Created {info['created']:%Y-%m-%d %H:%M} · Last updated {ps['updated']:%m-%d %H:%M} · {ps['tasks']} task(s)"
+    return (
+        f'<div class="hero" style="background:{project_color(proj)}"><div class="hero-mark">{htmllib.escape(proj[:1])}</div>'
+        f'<div><h2>{htmllib.escape(proj)}</h2><div class="hero-meta">{meta}</div></div><span class="ddl">{ddl}</span></div>'
+    )
+
+
+def segmented(label_: str, options: list, key: str):
+    """Tab-like switcher whose selection survives reruns (st.tabs jumps back to the first tab after a chat rerun)."""
+    if hasattr(st, "segmented_control"):
+        v = st.segmented_control(label_, options, key=key, label_visibility="collapsed")
+    else:
+        v = st.radio(label_, options, key=key, horizontal=True, label_visibility="collapsed")
+    return v or options[0]
 
 
 # ---------- Pages ----------
@@ -1005,25 +1093,55 @@ elif page == "Worker":
 
 else:  # Project Knowledge Base
     if not S.projects:
-        st.info("The knowledge base is empty. After you post a task and generate a brief in the \"Requester\" view, the process is captured here automatically.")
-        st.button("Go post a task →", on_click=goto, args=("Requester",))
+        with st.container(border=True):
+            st.markdown("#### 📚 The knowledge base is empty")
+            st.markdown(
+                "Every project gets **one living document**: the original request, the AI's understanding, the brief, "
+                "the demo and every question asked along the way. Post a task in the \"Requester\" view and it fills itself in."
+            )
+            st.button("Go post a task →", type="primary", on_click=goto, args=("Requester",))
         st.stop()
 
     # ---- Cover list ----
     if S.kb_open not in S.projects:
+        all_stats = {p: project_stats(p) for p in S.projects}
+        waiting_total = sum(len(v["waiting"]) for v in all_stats.values())
+        m = st.columns(4)
+        m[0].metric("Projects", len(S.projects))
+        m[1].metric("Tasks", sum(v["tasks"] for v in all_stats.values()))
+        m[2].metric("Q&A captured", sum(len(v["qas"]) for v in all_stats.values()))
+        m[3].metric("Awaiting requester", waiting_total)
+
         gallery, chat = st.columns([2, 1], gap="large")
         with gallery:
             st.subheader("All projects")
-            st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on. Open one for details.")
-            names = sorted(S.projects, key=lambda p: S.projects[p]["created"], reverse=True)
+            st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on.")
+            f1, f2, f3 = st.columns([3, 2, 2], vertical_alignment="center")
+            query = f1.text_input("Search", key="kb_query", placeholder="🔍 Search projects and tasks", label_visibility="collapsed")
+            sort = f2.selectbox("Sort", KB_SORTS, key="kb_sort", label_visibility="collapsed")
+            only_waiting = f3.toggle("Needs answers", key="kb_waiting_only", disabled=not waiting_total,
+                                     help="Only projects with questions waiting for the requester")
+
+            q_ = query.strip().lower()
+            names = [p for p in S.projects
+                     if (not q_ or q_ in p.lower() or any(q_ in d["task"].lower() for d in project_docs(p)))
+                     and (not only_waiting or all_stats[p]["waiting"])]
+            if sort == "Deadline soonest":
+                names.sort(key=lambda p: S.projects[p]["deadline"] or date.max)
+            elif sort == "Name":
+                names.sort(key=str.lower)
+            else:
+                names.sort(key=lambda p: all_stats[p]["updated"], reverse=True)
+
+            if not names:
+                st.info("No project matches the current filter.")
             per_row = 3
             for start in range(0, len(names), per_row):
                 cols = st.columns(per_row)
                 for col, name in zip(cols, names[start:start + per_row]):
                     with col:
                         st.markdown(cover_html(name), unsafe_allow_html=True)
-                        st.button("View details", key=f"open_{name}", on_click=open_project, args=(name,),
-                                  use_container_width=True)
+                        st.button("Open", key=f"open_{name}", on_click=open_project, args=(name,), use_container_width=True)
 
         with chat:
             st.subheader("Ask all projects")
@@ -1063,78 +1181,150 @@ else:  # Project Knowledge Base
     proj = S.kb_open
     info = S.projects[proj]
     docs = project_docs(proj)
-    events = [e for e in S.events if e["project"] == proj]
-    tasks = list(dict.fromkeys(e["task"] for e in events))
+    ps = project_stats(proj)
+    events = ps["events"]
+    task_ids = list(dict.fromkeys(d.get("task_id") for d in docs))
     doc_md = project_doc_md(proj)
 
     st.button("← All projects", on_click=open_project, args=(None,))
-    st.header(proj)
+    st.markdown(hero_html(proj), unsafe_allow_html=True)
     c = st.columns(5)
-    c[0].metric("Created", f"{info['created']:%m-%d %H:%M}")
-    c[1].metric("Last updated", f"{events[-1]['time']:%m-%d %H:%M}" if events else "—")
-    c[2].metric("Tasks", len(tasks))
-    qas = [d for d in docs if d["type"] == "Q&A"]
-    waiting = sum(d["content"].startswith(WAITING) for d in qas)
-    c[3].metric("Q&A records", len(qas), delta=f"{waiting} awaiting answer" if waiting else None, delta_color="off")
+    c[0].metric("Tasks", ps["tasks"])
+    c[1].metric("Briefs", ps["briefs"])
+    c[2].metric("Q&A records", len(ps["qas"]))
+    c[3].metric("Awaiting answer", len(ps["waiting"]))
     c[4].metric("Until deadline", f"{(info['deadline'] - date.today()).days} days" if info["deadline"] else "Not set")
-    with st.expander("Change deadline"):
-        info["deadline"] = st.date_input("Deadline (inferred by AI from the task description; can be edited)", value=info["deadline"], key=f"ddl_{proj}")
 
-    demos = [d for d in docs if d["type"] == "Demo"]
-    if demos:
-        st.subheader("Requirement demo")
-        for d in demos:
-            with st.expander(f"Task: {d['task']} · {d['time']:%m-%d %H:%M}", expanded=len(demos) == 1):
+    if ps["waiting"]:
+        with st.container(border=True):
+            w1, w2 = st.columns([4, 1], vertical_alignment="center")
+            w1.markdown(f"**⏳ {len(ps['waiting'])} question(s) waiting for the requester**  \n"
+                        + "  \n".join(f"· {htmllib.escape(d['title'])}" for d in ps["waiting"]), unsafe_allow_html=True)
+            w2.button("Answer now →", type="primary", on_click=goto, args=("Requester",), use_container_width=True,
+                      disabled=S.task_project != proj or not S.pending,
+                      help="Pending questions are answered in the Requester view while the task is active")
+
+    tab = segmented("Section", KB_TABS, "kb_tab")
+    st.write("")
+
+    if tab == KB_TABS[0]:  # Overview: one card per task
+        for n, tid in enumerate(reversed(task_ids), 1):
+            group = [d for d in docs if d.get("task_id") == tid]
+            kinds = {d["type"] for d in group}
+            qas = [d for d in group if d["type"] == "Q&A"]
+            waiting = [d for d in qas if d["content"].startswith(WAITING)]
+            title = group[-1]["task"]
+            chips = ['<span class="pill ok">Briefed</span>' if "Brief" in kinds else '<span class="pill warn">No brief yet</span>']
+            if "Demo" in kinds:
+                chips.append('<span class="pill ok">Demo</span>')
+            chips.append(f'<span class="pill">{len(qas)} Q&amp;A</span>')
+            if waiting:
+                chips.append(f'<span class="pill warn">{len(waiting)} awaiting</span>')
+            with st.container(border=True):
+                st.markdown(
+                    f'<div class="task-card-head"><b>Task {len(task_ids) - n + 1}: {htmllib.escape(title)}</b>{"".join(chips)}'
+                    f'<small>Updated {max(d["time"] for d in group):%m-%d %H:%M}</small></div>',
+                    unsafe_allow_html=True,
+                )
+                task_doc = next((d for d in group if d["type"] == "Task"), None)
+                if task_doc:
+                    understanding = re.search(r"AI's understanding: (.*)", task_doc["content"])
+                    if understanding:
+                        st.caption(understanding.group(1))
+                l, r = st.columns(2)
+                with l:
+                    label("Answered")
+                    answered = [d for d in qas if d not in waiting][-4:]
+                    if not answered:
+                        st.caption("Nothing yet")
+                    for d in answered:
+                        st.markdown(f'<div class="qa-row"><b>{htmllib.escape(d["title"])}</b><br>'
+                                    f'<small>{htmllib.escape(d["content"])}</small></div>', unsafe_allow_html=True)
+                with r:
+                    label("Still open")
+                    if not waiting:
+                        st.caption("No open questions")
+                    for d in waiting:
+                        st.markdown(f'<div class="qa-row">⏳ {htmllib.escape(d["title"])}</div>', unsafe_allow_html=True)
+                b1, b2, _ = st.columns([1, 1, 3])
+                b1.button("Read document", key=f"ov_doc_{tid}", on_click=open_project, args=(proj, KB_TABS[1]),
+                          use_container_width=True)
+                if "Demo" in kinds:
+                    b2.button("See demo", key=f"ov_demo_{tid}", on_click=open_project, args=(proj, KB_TABS[2]),
+                              use_container_width=True)
+        with st.expander("Change deadline"):
+            info["deadline"] = st.date_input("Deadline (inferred by AI from the task description; can be edited)",
+                                             value=info["deadline"], key=f"ddl_{proj}")
+
+    elif tab == KB_TABS[1]:  # Document: filterable reader + download
+        task_names = {tid: next(d["task"] for d in reversed(docs) if d.get("task_id") == tid) for tid in task_ids}
+        side, body = st.columns([1, 3], gap="large")
+        with side:
+            label("Task")
+            pick = st.radio("Task", [None] + task_ids, key=f"doc_task_{proj}", label_visibility="collapsed",
+                            format_func=lambda t: "All tasks" if t is None else task_names[t])
+            label("Sections")
+            secs = [s_ for s_ in DOC_SECTIONS if st.checkbox(s_, value=True, key=f"doc_sec_{proj}_{s_}")]
+            st.download_button("⬇ Download Markdown", doc_md, file_name=f"{proj}.md", mime="text/markdown",
+                               use_container_width=True, help="Always the full document")
+        with body, st.container(border=True, height=620):
+            shown = project_doc_md(proj, pick, secs)
+            st.markdown("\n\n".join(shown.split("\n\n")[2:]) or "_Nothing to show for this filter._",
+                        unsafe_allow_html=True)  # Title and overview are already in the header
+
+    elif tab == KB_TABS[2]:  # Demo
+        if not ps["demos"]:
+            st.info("No requirement demo for this project yet. Generate one in the Requester view after the brief.")
+        for d in ps["demos"]:
+            with st.expander(f"Task: {d['task']} · {d['time']:%m-%d %H:%M}", expanded=len(ps["demos"]) == 1):
                 show_demo(d["content"], height=500)
+                st.download_button("Download HTML", d["content"], file_name=f"{d['task']}.html", mime="text/html",
+                                   key=f"dl_demo_{d['key']}")
 
-    st.subheader("Project document")
-    c1, c2 = st.columns([3, 1])
-    c1.caption("Requirements, briefs and every question are in this one document, updated automatically as work goes on.")
-    c2.download_button("Download Markdown", doc_md, file_name=f"{proj}.md", mime="text/markdown", use_container_width=True)
-    with st.container(border=True):
-        st.markdown("\n\n".join(doc_md.split("\n\n")[2:]), unsafe_allow_html=True)  # Title and overview are already shown above
+    elif tab == KB_TABS[3]:  # Ask this project
+        st.caption("When someone new takes over or you come back a week later, just ask instead of digging through chat history.")
+        with st.container(height=440):
+            msgs = [m for m in S.kb_chat if m["project"] == proj]
+            if not msgs:
+                st.caption("No questions yet; try one below.")
+            for m in msgs:
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"], unsafe_allow_html=True)
+        sc = scenario_by_project(proj)
+        preset = preset_buttons(sc["kb_qs"] if sc else [], "kq")
+        if q := (st.chat_input("e.g. Which features were finally decided? Which questions are still open?") or preset):
+            S.kb_chat.append({"project": proj, "role": "user", "content": q})
+            try:
+                with st.spinner("Searching…"):
+                    r = answer_kb(proj, info, doc_md, events, q)
+                cites = "; ".join(str(s) for s in r["sources"] if s)
+                msg = r["answer"] if r["found"] else f"Not enough basis in the knowledge base: {r['answer']}"
+                if cites:
+                    msg += f"\n\n<small>Sources: {cites}</small>"
+            except Exception as e:
+                msg = f"Call failed: {e}"
+            S.kb_chat.append({"project": proj, "role": "assistant", "content": msg})
+            st.rerun()
 
-    st.subheader("Ask the knowledge base")
-    st.caption("When someone new takes over or you come back a week later, just ask instead of digging through chat history.")
-    for m in S.kb_chat:
-        if m["project"] == proj:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"], unsafe_allow_html=True)
-    sc = scenario_by_project(proj)
-    preset = preset_buttons(sc["kb_qs"] if sc else [], "kq")
-    if q := (st.chat_input("e.g. Which features were finally decided? Which questions are still open?") or preset):
-        S.kb_chat.append({"project": proj, "role": "user", "content": q})
-        try:
-            with st.spinner("Searching…"):
-                r = answer_kb(proj, info, doc_md, events, q)
-            cites = "; ".join(str(s) for s in r["sources"] if s)
-            msg = r["answer"] if r["found"] else f"Not enough basis in the knowledge base: {r['answer']}"
-            if cites:
-                msg += f"\n\n<small>Sources: {cites}</small>"
-        except Exception as e:
-            msg = f"Call failed: {e}"
-        S.kb_chat.append({"project": proj, "role": "assistant", "content": msg})
-        st.rerun()
-
-    st.subheader("Project timeline")
-    if events:
-        df = pd.DataFrame(events)
-        df["Time"] = df["time"].dt.strftime("%m-%d %H:%M:%S")
-        span = df.groupby("task", sort=False)["time"].agg(["min", "max"]).reset_index()
-        y = alt.Y("task:N", title=None, sort=tasks)
-        x_scale = alt.Scale(type="utc")  # Times have no time zone; show them as-is so the browser doesn't convert them again
-        spans = alt.Chart(span).mark_rule(strokeWidth=8, opacity=0.2).encode(
-            x=alt.X("min:T", scale=x_scale, title=None), x2="max:T", y=y
-        )
-        dots = alt.Chart(df).mark_circle(size=160, opacity=0.9).encode(
-            x=alt.X("time:T", scale=x_scale),
-            y=y,
-            color=alt.Color("type:N", title="Event"),
-            tooltip=[alt.Tooltip("Time:N"), alt.Tooltip("type:N", title="Event"), alt.Tooltip("text:N", title="Details")],
-        )
-        st.altair_chart((spans + dots).properties(height=80 + 50 * len(tasks)), width="stretch")
-        with st.expander("Event details"):
+    else:  # Timeline
+        if events:
+            tasks = list(dict.fromkeys(e["task"] for e in events))
+            df = pd.DataFrame(events)
+            df["Time"] = df["time"].dt.strftime("%m-%d %H:%M:%S")
+            span = df.groupby("task", sort=False)["time"].agg(["min", "max"]).reset_index()
+            y = alt.Y("task:N", title=None, sort=tasks)
+            x_scale = alt.Scale(type="utc")  # Times have no time zone; show them as-is so the browser doesn't convert them again
+            spans = alt.Chart(span).mark_rule(strokeWidth=8, opacity=0.2).encode(
+                x=alt.X("min:T", scale=x_scale, title=None), x2="max:T", y=y
+            )
+            dots = alt.Chart(df).mark_circle(size=160, opacity=0.9).encode(
+                x=alt.X("time:T", scale=x_scale),
+                y=y,
+                color=alt.Color("type:N", title="Event"),
+                tooltip=[alt.Tooltip("Time:N"), alt.Tooltip("type:N", title="Event"), alt.Tooltip("text:N", title="Details")],
+            )
+            st.altair_chart((spans + dots).properties(height=80 + 50 * len(tasks)), width="stretch")
             table = df[["Time", "task", "type", "text"]].rename(columns={"task": "Task", "type": "Event", "text": "Details"})
             st.dataframe(table.iloc[::-1], hide_index=True, width="stretch")
-    else:
-        st.caption("No events yet")
+        else:
+            st.caption("No events yet")
