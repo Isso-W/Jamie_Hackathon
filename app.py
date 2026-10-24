@@ -308,15 +308,23 @@ def start_harness() -> dict:
         return harness_get("/health")
     except OSError:
         pass
-    subprocess.Popen(["node", "server.mjs"], cwd=HARNESS_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    log_path = HARNESS_DIR / "harness.log"  # Keep the sidecar's output so a startup crash is visible, not a silent hang
+    with open(log_path, "w", encoding="utf-8") as log:
+        proc = subprocess.Popen(["node", "server.mjs"], cwd=HARNESS_DIR, stdout=log, stderr=subprocess.STDOUT,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     for _ in range(60):
         time.sleep(0.5)
+        if proc.poll() is not None:
+            tail = log_path.read_text(encoding="utf-8", errors="replace")[-1500:]
+            raise RuntimeError(f"The pi harness exited (code {proc.returncode}). Needs Node >= 22.19 and apikey.txt; "
+                               f"see harness/harness.log:\n{tail}")
         try:
             return harness_get("/health")
         except OSError:
             pass
-    raise RuntimeError("The pi harness did not start (run `npm install` in harness/)")
+    proc.kill()
+    raise RuntimeError("The pi harness did not answer /health in 30s; is port 8765 taken by another program? "
+                       "See harness/harness.log")
 
 
 def run_job(job: dict) -> dict:
