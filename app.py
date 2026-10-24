@@ -69,13 +69,13 @@ SCENARIOS = {
 
 LANG_RULE = "Answer in the same language as the task description."
 
-PAGES = ["Requester", "Worker", "Project Knowledge Base"]
+PAGES = ["Stakeholders", "Worker", "Project Knowledge Base"]
 STEPS = ["Post task", "AI questions", "Task brief", "Requirement demo", "Worker Q&A", "Knowledge captured"]
 COVER_COLORS = ["#4f46e5", "#0f766e", "#c2410c", "#be185d", "#1d4ed8", "#7c3aed", "#15803d", "#b45309"]
-WAITING = "⏳ Awaiting requester's answer"
+WAITING = "⏳ Awaiting a stakeholder's answer"
 ALL_KB = "__all__"  # Marker in kb_chat for cross-project Q&A
 ALL_QS = [
-    "Which projects still have questions waiting for the requester?",
+    "Which projects still have questions waiting for a stakeholder?",
     "Which project is closest to its deadline?",
     "What key decisions has each project made?",
 ]
@@ -105,17 +105,31 @@ ANALYZE_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "question": {"type": "string"},
+                    "to": {"type": "string", "description": "Name of the stakeholder who owns this decision, exactly as in the stakeholder list"},
                     "why": {"type": "string", "description": "Why ask this, and what goes wrong if it isn't clarified"},
                     "options": {"type": "array", "items": {"type": "string"}, "description": "Possible answers; leave empty if none"},
                 },
-                "required": ["question", "why", "options"],
+                "required": ["question", "to", "why", "options"],
             },
             "description": "This round's most critical clarifying questions, at most 3, ordered by importance",
         },
         "needs_meeting": {"type": "boolean", "description": "Whether it involves multi-party decisions or conflicting interests that need a face-to-face talk"},
         "meeting_reason": {"type": "string"},
+        "stakeholders": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "A first name, or 'Requester' for the poster if unnamed"},
+                    "role": {"type": "string"},
+                    "cares": {"type": "string", "description": "What this person wants from the result, in a few words"},
+                },
+                "required": ["name", "role", "cares"],
+            },
+            "description": "2 to 4 people whose wishes matter, inferred from the task; the first is the person who posted it",
+        },
     },
-    "required": ["title", "understanding", "deadline", "subtasks", "known", "questions", "needs_meeting", "meeting_reason"],
+    "required": ["title", "understanding", "deadline", "subtasks", "known", "questions", "needs_meeting", "meeting_reason", "stakeholders"],
 }
 
 CLARIFY_SCHEMA = {
@@ -126,8 +140,40 @@ CLARIFY_SCHEMA = {
         "remaining": {"type": "array", "items": {"type": "string"},
                       "description": "Decisions still open that matter; for 'not sure' answers, include your recommended default"},
         "questions": ANALYZE_SCHEMA["properties"]["questions"],
+        "conflicts": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "What the conflict is about, in a few words"},
+                    "sides": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"who": {"type": "string"}, "wants": {"type": "string"}},
+                            "required": ["who", "wants"],
+                        },
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string", "description": "A concrete resolution, ideally a compromise"},
+                                "tradeoff": {"type": "string", "description": "What each side gains and gives up"},
+                            },
+                            "required": ["label", "tradeoff"],
+                        },
+                        "description": "2 or 3 resolutions, the recommended compromise first",
+                    },
+                },
+                "required": ["topic", "sides", "options"],
+            },
+            "description": "Contradictions between stakeholders' wishes or answers for the owner to settle; never ones already decided (D lines)",
+        },
     },
-    "required": ["understanding", "complete", "remaining", "questions"],
+    "required": ["understanding", "complete", "remaining", "questions", "conflicts"],
 }
 MAX_ROUNDS = 4  # Hard stop so a demo never loops forever; whatever is still open goes into the brief's open issues
 
@@ -165,9 +211,10 @@ WORKER_SCHEMA = {
         "can_answer": {"type": "boolean", "description": "Whether the brief and existing Q&A give enough basis to answer"},
         "answer": {"type": "string", "description": "The answer if possible; otherwise explain what is missing"},
         "source": {"type": "string", "description": "Basis for the answer: which part of the brief, or which past Q&A"},
-        "question_for_requester": {"type": "string", "description": "If it can't be answered, a clear question to forward to the requester"},
+        "question_for_requester": {"type": "string", "description": "If it can't be answered, a clear question to forward to a stakeholder"},
+        "ask_who": {"type": "string", "description": "If it can't be answered, the stakeholder who owns that decision, exactly as in the stakeholder list"},
     },
-    "required": ["can_answer", "answer", "source", "question_for_requester"],
+    "required": ["can_answer", "answer", "source", "question_for_requester", "ask_who"],
 }
 
 KB_SCHEMA = {
@@ -326,92 +373,150 @@ def coerce(v, schema: dict):
     return v
 
 
-def call_text(system: str, content: str, name: str, max_tokens: int = 8000) -> str:
-    """Long text output (e.g. HTML) skips tool use and asks for a plain reply, which is more reliable."""
+def workspace_name() -> str:
+    """Folder under workspaces/ where pi keeps this task's files (ASCII only, so Python and the sidecar agree on it)."""
+    return f"task{S.task_id}-{hashlib.md5(S.task_project.encode('utf-8')).hexdigest()[:6]}"
+
+
+def call_agent(system: str, content: str, name: str, workspace: str, out_file: str,
+               tools: tuple = ("read", "write", "edit", "ls")) -> dict:
+    """A tool-using pi job whose output is a file it writes in workspaces/<workspace>/. Returns {"text": file content, "steps"}.
+    The direct-API fallback has no tools, so it asks for the whole file in one reply instead."""
+    path = Path(__file__).parent / "workspaces" / workspace / out_file
+
     def direct():
         resp = get_client().chat.completions.create(
             model=MODEL,
-            max_tokens=max_tokens,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": content}],
+            max_tokens=8000,
+            messages=[{"role": "system", "content": f"{system} You have no tools: output the whole {out_file} in one code block, with no explanation."},
+                      {"role": "user", "content": content}],
             extra_body={"enable_thinking": False},
         )
-        return {"text": resp.choices[0].message.content or ""}
+        text = resp.choices[0].message.content or ""
+        m = re.search(r"```(?:\w+)?\s*(.*?)```", text, re.S)
+        return {"file": (m.group(1) if m else text).strip(), "steps": []}
 
     def produce():
-        return {"text": via_harness({"system": system, "prompt": content}, direct)["text"]}
+        r = via_harness({"system": system, "prompt": content, "tools": list(tools), "workspace": workspace}, direct)
+        if "file" not in r and not path.exists():
+            st.toast(f"pi finished without writing {out_file}, using the direct API")
+            r = direct()
+        return {"text": r["file"] if "file" in r else path.read_text(encoding="utf-8"), "steps": r["steps"]}
 
-    return cached(name, system, content, produce)["text"]
+    data = cached(name, system, content, produce)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(data["text"], encoding="utf-8")  # Keep the workspace in sync when the result came from a recording or the fallback
+    return data
+
+
+def steps_md(steps: list) -> str:
+    """Summarize pi's tool calls, e.g. "read index.html → edit index.html ×2"."""
+    counts = {}
+    for x in steps:
+        target = Path(str((x.get("args") or {}).get("path", ""))).name
+        key = f"{x['tool']} {target}".strip()
+        counts[key] = counts.get(key, 0) + 1
+    return " → ".join(f"{k} ×{n}" if n > 1 else k for k, n in counts.items())
 
 
 def analyze(task: str) -> dict:
     system = (
         "You are an experienced tech lead on the team, responsible for making sure requirements are understood before work starts. "
         "Break down the task, find ambiguities and hidden assumptions, and ask only the key questions that really affect implementation; don't ask about the obvious. "
-        "Don't make assumptions on the requester's behalf: if information is missing, ask. " + LANG_RULE
+        "Don't make assumptions on the requester's behalf: if information is missing, ask. "
+        "Name the stakeholders whose wishes matter, and address each question to the one who owns that decision. " + LANG_RULE
     )
     return call_tool(system, f"Today is {date.today()}.\nTask description:\n{task}", "task_analysis", ANALYZE_SCHEMA, skills=("grill-me",))
 
 
+def is_wish(h: dict) -> bool:
+    return h.get("kind") == "wish"
+
+
+def is_question(h: dict) -> bool:
+    return not h.get("kind")  # Wishes and owner decisions carry a kind
+
+
 def qa_md(qa: list) -> str:
-    return "\n".join(f"Q{i} (round {h.get('round', 1)}): {h['q']}\nA ({h['by']}): {h['a']}" for i, h in enumerate(qa, 1)) or "(none)"
+    lines, nq, nw, nd = [], 0, 0, 0
+    for h in qa:
+        if is_wish(h):
+            nw += 1
+            lines.append(f"W{nw} (round {h.get('round', 1)}): {h['by']} wishes: {h['a']}")
+        elif h.get("kind") == "decision":
+            nd += 1
+            lines.append(f"D{nd} (round {h.get('round', 1)}): owner {h['by']} settled {h['q']} ({h['sides']}): {h['a']}")
+        else:
+            nq += 1
+            lines.append(f"Q{nq} (round {h.get('round', 1)}): {h['q']}\nA ({h['by']}): {h['a']}")
+    return "\n".join(lines) or "(none)"
 
 
-def clarify(task: str, analysis: dict, qa: list, round_no: int) -> dict:
+def clarify(task: str, analysis: dict, people: list, qa: list, round_no: int) -> dict:
     system = (
-        "You are an experienced tech lead grilling the requester, round after round, until the request is fully explained. "
+        "You are an experienced tech lead grilling the stakeholders, round after round, until the request is fully explained. "
+        "Address each question to the stakeholder who owns that decision. "
+        "Stakeholders may also state wishes unprompted (W lines): treat each as that person's requirement, ask the follow-ups it raises, "
+        "If wishes or answers from different stakeholders contradict each other, don't ask about it as a question: put it in conflicts "
+        "with who wants what and 2-3 resolutions, best compromise first, for the owner to pick. A conflict goes only into conflicts, never also into questions. "
+        "Never re-raise a conflict already decided (D lines). "
         "You get the task, your current understanding and every answer so far. Answers often open new decisions: ask the follow-ups they raise. "
         "Never repeat a question that was already answered. If an answer was 'not sure', don't ask it again: put it in remaining with your recommended default. "
-        "Only ask what changes what gets built. Set complete to true, with no questions, once nothing open would change the implementation. " + LANG_RULE
+        "Only ask what changes what gets built. Set complete to true, with no questions and no conflicts, once nothing open would change the implementation. " + LANG_RULE
     )
     content = (
-        f"Today is {date.today()}.\nTask description:\n{task}\n\nCurrent understanding: {analysis['understanding']}\n\n"
-        f"Q&A so far:\n{qa_md(qa)}\n\nThis is round {round_no} of at most {MAX_ROUNDS}."
+        f"Today is {date.today()}.\nTask description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\n"
+        f"Current understanding: {analysis['understanding']}\n\nQ&A so far:\n{qa_md(qa)}\n\nThis is round {round_no} of at most {MAX_ROUNDS}."
     )
     return call_tool(system, content, "clarify_round", CLARIFY_SCHEMA, skills=("grill-me",))
 
 
-def write_brief(task: str, analysis: dict, qa: list, remaining: list) -> dict:
+def write_brief(task: str, analysis: dict, people: list, qa: list, remaining: list) -> dict:
     system = (
         "Based on the task description and the clarification Q&A, write a task brief the worker can start on right away. "
-        "Every decision must trace back to an answer; anything without a basis can only go into open issues. " + LANG_RULE
+        "Every decision must trace back to an answer, a stakeholder's wish (W lines) or an owner's conflict decision (D lines), and who gave it; anything without a basis can only go into open issues. " + LANG_RULE
     )
     content = (
-        f"Task description:\n{task}\n\nUnderstanding after clarification: {analysis['understanding']}\n\n"
+        f"Task description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\nUnderstanding after clarification: {analysis['understanding']}\n\n"
         f"Clarification Q&A:\n{qa_md(qa)}\n\nStill open: {'; '.join(remaining) or '(nothing)'}"
     )
     return call_tool(system, content, "task_brief", BRIEF_SCHEMA)
 
 
-def make_demo(task: str, brief: dict, qa: list, feedback: str = "") -> str:
+def make_demo(task: str, brief: dict, qa: list, feedback: str = "") -> tuple:
+    """pi builds the prototype as workspaces/<task>/index.html; change requests edit that file instead of starting over."""
+    ws = workspace_name()
+    page = Path(__file__).parent / "workspaces" / ws / "index.html"
+    if not feedback and page.exists():
+        page.unlink()  # A fresh build never starts from a stale page left by an earlier session
     system = (
-        "You are a product prototype designer. Based on the requester's answers in the Q&A and the task brief, build an interactive single-file HTML prototype "
+        "You are a product prototype designer. Based on the stakeholders' answers in the Q&A and the task brief, build an interactive single-file HTML prototype "
         "so the requester can confirm at a glance that \"this is roughly what it will look like\". "
-        "Every answer that changes what the user sees or does must be visible and working in the prototype (e.g. if they chose CSV export, there is a working Export CSV button); "
+        "Every answer, stakeholder wish (W lines) and owner decision (D lines) that changes what the user sees or does must be visible and working in the prototype (e.g. if they chose CSV export, there is a working Export CSV button); "
         "earlier change requests in the Q&A still apply. Don't add features nobody asked for or answered. "
-        "At the bottom, add a small collapsed <details> section titled \"Built from your answers\" mapping each visible feature to the answer it came from. "
+        "At the bottom, add a small collapsed <details> section titled \"Built from your answers\" mapping each visible feature to the answer, wish or decision (Q/W/D number and who) it came from. "
         "Requirements: implement only the core features within the brief's scope, and buttons and inputs must actually work; use fake data where data is needed; "
         "don't access the network or reference any external files, fonts or CDNs; inline all CSS and JS; "
         "keep the style clean and modern, with UI text in the same language as the task description; keep the overall height within 520px and the width responsive. "
-        "Output only one ```html code block, with no explanation."
+        "Work in the current folder: write the prototype to index.html. If index.html already exists, read it and apply the change requests "
+        "with targeted edits instead of rewriting it. When done, reply with one short sentence."
     )
-    content = f"Task description:\n{task}\n\nRequester's Q&A:\n{qa_md(qa)}\n\nTask brief:\n{brief_md(brief)}"
+    content = f"Task description:\n{task}\n\nStakeholders' Q&A:\n{qa_md(qa)}\n\nTask brief:\n{brief_md(brief)}"
     if feedback:
-        content += f"\n\nRequester's change requests after seeing the previous demo (must be reflected): {feedback}"
-    text = call_text(system, content, "demo_html")
-    m = re.search(r"```(?:html)?\s*(.*?)```", text, re.S)
-    code = (m.group(1) if m else text).strip()
-    if "<" not in code:
+        content += f"\n\nThe current prototype is in index.html. Change requests after seeing it (must be reflected): {feedback}"
+    data = call_agent(system, content, "demo_html", ws, "index.html")
+    if "<" not in data["text"]:
         raise RuntimeError("The model did not return HTML")
-    return code
+    return data["text"], data["steps"]
 
 
-def answer_worker(task: str, brief: dict, history: list, question: str) -> dict:
+def answer_worker(task: str, brief: dict, people: list, history: list, question: str) -> dict:
     hist = "\n".join(f"Q: {h['q']}\nA ({h['by']}): {h['a']}" for h in history) or "(none)"
     system = (
         "You are the task's coordination assistant; the worker asks you questions while working. Answer only from the task brief and past Q&A; don't make things up. "
-        "If the basis is insufficient, set can_answer to false and turn it into a clear question for the requester. " + LANG_RULE
+        "If the basis is insufficient, set can_answer to false, turn it into a clear question, and set ask_who to the stakeholder who owns that decision. " + LANG_RULE
     )
-    content = f"Task description:\n{task}\n\nTask brief:\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n\nPast Q&A:\n{hist}\n\nWorker's question: {question}"
+    content = f"Task description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\nTask brief:\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n\nPast Q&A:\n{hist}\n\nWorker's question: {question}"
     return call_tool(system, content, "worker_answer", WORKER_SCHEMA, skills=("grill-me",))
 
 
@@ -454,11 +559,20 @@ TASK_DEFAULTS = {
     "clarified": False,  # True once the AI has nothing left to ask (or MAX_ROUNDS was hit, or the requester stopped)
     "remaining": [],  # Decisions still open after clarification
     "stopped": False,  # Clarification ended before the AI said it was complete
+    "round_ans": {},  # This round's answers so far, question -> {"a", "by"}; the round closes once every question has one
+    "cast_seed": [],  # Stakeholder table as it was when the task was analyzed (input to the editor)
+    "acting": "",  # Which stakeholder the person at the keyboard is acting as
+    "wish_ver": 0,  # +1 per added wish, used to clear the wish input
+    "conflicts": [],  # This round's stakeholder conflicts for the owner: {"topic", "sides", "options"}
+    "round_dec": {},  # This round's owner decisions so far, conflict topic -> chosen resolution
+    "demo_steps": [],  # What pi did to build the current demo: [{"tool", "args"}]
+    "brief_qa": 0,  # len(S.qa) when the brief was written; more entries since means the brief is stale
     "brief": None,
     "demo": None,  # HTML of the requirement demo
     "demo_ver": 0,  # +1 on every regeneration, used to clear the change-request input
     "history": [],  # Captured Q&A: {"q", "a", "by"}
-    "pending": [],  # Questions waiting for the requester
+    "pending": [],  # Questions waiting for a stakeholder
+    "pending_to": {},  # Pending question -> stakeholder it was forwarded to
     "chat": [],  # Worker chat: {"role", "content"}
 }
 KB_DEFAULTS = {
@@ -547,6 +661,115 @@ def ask_key(q: str) -> str:
     return f"{S.task_id}-ask-{hashlib.md5(q.encode('utf-8')).hexdigest()[:8]}"
 
 
+def cast() -> list:
+    """The current project's stakeholders: {"name", "role", "cares", "owner"}; the owner settles conflicts and can stop the questioning."""
+    info = S.projects.get(S.task_project) or {}
+    return info.get("cast") or [{"name": "Requester", "role": "Requester", "cares": "", "owner": True}]
+
+
+def owner() -> str:
+    people = cast()
+    return next((p["name"] for p in people if p["owner"]), people[0]["name"])
+
+
+def cast_md(people: list) -> str:
+    return "\n".join(f"- {p['name']} ({p['role']}{', owner' if p['owner'] else ''}): {p['cares'] or 'n/a'}" for p in people)
+
+
+def route(name: str) -> str:
+    """Map an AI-chosen addressee onto the cast; unknown or empty names go to the owner."""
+    names = {p["name"].strip().lower(): p["name"] for p in cast()}
+    return names.get((name or "").strip().lower()) or owner()
+
+
+def act_as(name: str):
+    S.acting = name
+
+
+def clean_cast(rows: list, fallback: list) -> list:
+    """Normalize the edited stakeholder table: drop nameless rows, blank out NaN, keep exactly one owner."""
+    people = []
+    for r in rows:
+        name = r.get("name")
+        if pd.isna(name) or not str(name).strip():
+            continue
+        people.append({
+            "name": str(name).strip(),
+            "role": "" if pd.isna(r.get("role")) else str(r.get("role")),
+            "cares": "" if pd.isna(r.get("cares")) else str(r.get("cares")),
+            "owner": bool(r.get("owner")) if not pd.isna(r.get("owner")) else False,
+        })
+    if not people:
+        return fallback
+    first = next((i for i, x in enumerate(people) if x["owner"]), 0)
+    for i, x in enumerate(people):
+        x["owner"] = i == first
+    return people
+
+
+def apply_clarify(a: dict, r: dict):
+    """Open the next round from the AI's clarify result (or finish if it has nothing left)."""
+    a["understanding"], S.remaining = r["understanding"], r["remaining"]
+    a["questions"], S.conflicts = r["questions"], r["conflicts"]
+    S.round += 1
+    S.round_ans, S.round_dec = {}, {}
+    S.clarified = not (r["questions"] or r["conflicts"])
+    if S.conflicts:
+        S.acting = owner()
+    elif r["questions"]:
+        S.acting = route(r["questions"][0]["to"])
+
+
+def close_round(a: dict, stop: bool = False):
+    """Commit this round's answers and owner decisions, then let the AI open the next round (or stop)."""
+    qs, cs = a["questions"], S.conflicts
+    answered = [{"q": q["question"], **S.round_ans[q["question"]], "round": S.round} for q in qs if q["question"] in S.round_ans]
+    decided = [{"q": f"Conflict: {c['topic']}", "a": S.round_dec[c["topic"]], "by": owner(), "round": S.round, "kind": "decision",
+                "sides": "; ".join(f"{x['who']} wants {x['wants']}" for x in c["sides"])}
+               for c in cs if c["topic"] in S.round_dec]
+    S.qa += answered + decided
+    for d in decided:
+        save_doc(f"{S.task_id}-dec-{hashlib.md5(d['q'].encode('utf-8')).hexdigest()[:8]}", "Q&A", d["q"],
+                 f"Owner {d['by']} decided: {d['a']} (sides: {d['sides']})")
+        log("Conflict settled", f"{d['q']} → {d['a']}")
+    S.remaining += [f"{q['question']} (unanswered, for {route(q['to'])})" for q in qs if q["question"] not in S.round_ans]
+    S.remaining += [f"Conflict: {c['topic']} (undecided)" for c in cs if c["topic"] not in S.round_dec]
+    if stop or S.round >= MAX_ROUNDS:
+        S.clarified = S.stopped = True
+        S.round_ans, S.round_dec = {}, {}
+        return
+    try:
+        r = clarify(S.task, a, cast(), S.qa, S.round + 1)
+    except Exception:
+        S.qa = S.qa[: len(S.qa) - len(answered) - len(decided)]  # Keep the round open so it can be resubmitted
+        raise
+    log("Clarification round", f"Round {S.round}: {len(answered)} answer(s), {len(decided)} decision(s)")
+    apply_clarify(a, r)
+
+
+def round_waiting(a: dict) -> list:
+    """Who this round still waits for."""
+    who = [route(q["to"]) for q in a["questions"] if q["question"] not in S.round_ans]
+    who += [owner() for c in S.conflicts if c["topic"] not in S.round_dec]
+    return sorted(set(who))
+
+
+def add_wish(a: dict, who: str, text: str):
+    """Record a stakeholder's unprompted wish. Mid-round it waits for the next round; once clarification
+    has finished, pi reacts right away and may reopen questioning with follow-ups."""
+    S.qa.append({"q": f"Wish from {who}", "a": text, "by": who, "round": S.round, "kind": "wish"})
+    S.wish_ver += 1
+    save_doc(f"{S.task_id}-wish-{S.wish_ver}", "Q&A", f"Wish from {who}", f"Wish ({who}): {text}")
+    log("Wish added", f"{who}: {text}")
+    if not S.clarified:
+        st.toast("Wish recorded; the AI takes it into account in the next round")
+        return
+    apply_clarify(a, clarify(S.task, a, cast(), S.qa, S.round + 1))
+    if not S.clarified:
+        S.stopped = False
+        st.toast("The new wish raised a conflict or follow-up questions")
+
+
 def on_analyzed(a: dict):
     if S.task_id is None:
         S.task_seq += 1
@@ -554,6 +777,11 @@ def on_analyzed(a: dict):
         S.task_project = S.project.strip() or "Untitled Project"
     S.task_title = a["title"] or S.task[:40]
     info = S.projects.setdefault(S.task_project, {"created": datetime.now(), "deadline": None})
+    if not info.get("cast"):  # A project keeps its cast across tasks; only a new project takes the AI's suggestion
+        people = [x for x in a["stakeholders"] if x.get("name")][:5]
+        info["cast"] = [{**x, "owner": i == 0} for i, x in enumerate(people)] or cast()
+    S.cast_seed = [dict(x) for x in info["cast"]]
+    S.acting = owner()
     try:
         ddl = date.fromisoformat(a["deadline"])
         if not info["deadline"] or ddl > info["deadline"]:
@@ -646,7 +874,7 @@ CSS = """
 
 def steps_done() -> int:
     cur = [e for e in S.events if S.task_title and e["task"] == S.task_title]
-    if any(e["type"] in ("AI answered", "Requester answered") for e in cur):
+    if any(e["type"] in ("AI answered", "Stakeholder answered") for e in cur):
         return 6
     if S.chat:
         return 5
@@ -756,8 +984,13 @@ with st.sidebar:
                   help="New tasks go under this project; you can switch after starting a new task")
     if S.task_id is not None:
         st.caption(f"Current task: {S.task_title}")
+    if S.page == "Stakeholders" and S.analysis:
+        names = [x["name"] for x in cast()]
+        S.acting = st.selectbox("Acting as", names, index=names.index(S.acting) if S.acting in names else 0,
+                                help="Switch to answer as another stakeholder; each question goes to the person who owns that decision")
+        st.caption(f"Owner: {owner()} (settles conflicts, can stop the questioning)")
     if S.pending:
-        st.warning(f"{len(S.pending)} worker question(s) waiting for the requester")
+        st.warning(f"{len(S.pending)} worker question(s) waiting for stakeholders")
     n_qa = sum(d["type"] == "Q&A" for d in S.docs)
     st.caption(f"Knowledge base: {len(S.projects)} project doc(s), {n_qa} Q&A, {len(S.events)} event(s)")
     c1, c2 = st.columns(2)
@@ -784,7 +1017,7 @@ render_steps()
 
 page = S.page
 
-if page == "Requester":
+if page == "Stakeholders":
     st.subheader("1. Post a task")
     c1, c2 = st.columns([4, 1])
     pick = c1.selectbox("Example scenario", ["Write my own"] + list(SCENARIOS), key="scenario_pick", label_visibility="collapsed")
@@ -797,6 +1030,7 @@ if page == "Requester":
             try:
                 S.analysis, S.brief, S.demo = analyze(S.task), None, None
                 S.qa, S.round, S.remaining, S.stopped = [], 1, [], False
+                S.round_ans, S.conflicts, S.round_dec = {}, [], {}
                 S.clarified = not S.analysis["questions"]
                 on_analyzed(S.analysis)
                 ok = True
@@ -821,52 +1055,119 @@ if page == "Requester":
         if a["needs_meeting"]:
             st.warning(f"Suggest talking face to face: {a['meeting_reason']}")
 
+        with st.container(border=True):
+            label("Stakeholders · suggested by AI, edit freely; tick the owner")
+            edited = st.data_editor(
+                pd.DataFrame(S.cast_seed or cast(), columns=["name", "role", "cares", "owner"]),
+                key=f"sub_cast_{S.task_id}", num_rows="dynamic", hide_index=True, use_container_width=True,
+                column_config={
+                    "name": "Name",
+                    "role": "Role",
+                    "cares": st.column_config.TextColumn("Cares about", width="large"),
+                    "owner": st.column_config.CheckboxColumn("Owner"),
+                },
+            )
+            S.projects[S.task_project]["cast"] = clean_cast(edited.to_dict("records"), cast())
+
         st.markdown(
             f'### 3. AI\'s questions <span class="pill">Round {S.round} · keeps asking until the request is fully explained</span>',
             unsafe_allow_html=True,
         )
         if S.qa:
-            with st.expander(f"Answered so far ({len(S.qa)})"):
-                for i, h in enumerate(S.qa, 1):
-                    st.markdown(f"**Q{i}. {h['q']}**  \n{h['a']}")
-        if not S.clarified:
-            answers = {}
-            for i, q in enumerate(a["questions"]):
-                with st.container(border=True):
-                    st.markdown(f"**Q{len(S.qa) + i + 1}. {q['question']}**")
-                    st.caption(f"Why ask: {q['why']}")
-                    choice = None
-                    if q["options"]:
-                        choice = st.radio("Pick one", q["options"] + ["Other / not sure"], key=f"opt_{S.round}_{i}", horizontal=True,
-                                          label_visibility="collapsed")
-                    text = st.text_input("Additional notes (optional)", key=f"ans_{S.round}_{i}", placeholder="Additional notes (optional)",
-                                         label_visibility="collapsed")
-                    if choice and choice != "Other / not sure":
-                        answers[q["question"]] = f"{choice}. {text}" if text else choice
+            with st.expander(f"Answers and wishes so far ({len(S.qa)})"):
+                n = 0  # Question number; wishes and decisions are not numbered
+                for h in S.qa:
+                    if is_wish(h):
+                        st.markdown(f"💬 **{h['by']} wishes:** {h['a']}")
+                    elif h.get("kind") == "decision":
+                        st.markdown(f"⚖️ **{h['by']} settled** {h['q']}: {h['a']}")
                     else:
-                        answers[q["question"]] = text or "Not sure, decide later"
+                        n += 1
+                        st.markdown(f"**Q{n}. {h['q']}**  \n{h['by']}: {h['a']}")
+
+        with st.container(border=True):
+            label(f"Anything else {S.acting} wants? Add a wish (any time)")
+            c1, c2 = st.columns([4, 1])
+            wish = c1.text_input("Wish", key=f"sub_wish_{S.wish_ver}", label_visibility="collapsed",
+                                 placeholder="e.g. It must work on my phone / It must cost nothing / Show who booked each slot")
+            if c2.button("Add wish", use_container_width=True) and wish.strip():
+                with st.spinner("AI is taking the new wish into account…"):
+                    try:
+                        add_wish(a, S.acting, wish.strip())
+                        ok = True
+                    except Exception as e:
+                        st.error(f"Call failed: {e}")
+                        ok = False
+                if ok:
+                    st.rerun()
+        if not S.clarified:
+            me, mine = S.acting, {}
+            for i, q in enumerate(a["questions"]):
+                to = route(q["to"])
+                with st.container(border=True):
+                    st.markdown(f'**Q{sum(map(is_question, S.qa)) + i + 1}. {q["question"]}** <span class="pill">for {htmllib.escape(to)}</span>',
+                                unsafe_allow_html=True)
+                    st.caption(f"Why ask: {q['why']}")
+                    done = S.round_ans.get(q["question"])
+                    if done:
+                        st.markdown(f"✅ **{done['by']}**: {done['a']}")
+                    elif to != me:
+                        st.button(f"Answer as {to} →", key=f"btn_as_{S.round}_{i}", on_click=act_as, args=(to,))
+                    else:
+                        choice = None
+                        if q["options"]:
+                            choice = st.radio("Pick one", q["options"] + ["Other / not sure"], key=f"opt_{S.round}_{i}", horizontal=True,
+                                              label_visibility="collapsed")
+                        text = st.text_input("Additional notes (optional)", key=f"ans_{S.round}_{i}", placeholder="Additional notes (optional)",
+                                             label_visibility="collapsed")
+                        if choice and choice != "Other / not sure":
+                            mine[q["question"]] = f"{choice}. {text}" if text else choice
+                        else:
+                            mine[q["question"]] = text or "Not sure, decide later"
+
+            picked = None
+            for j, c in enumerate(S.conflicts):
+                with st.container(border=True):
+                    st.markdown(f'**⚖️ Conflict: {c["topic"]}** <span class="pill">owner {htmllib.escape(owner())} decides</span>',
+                                unsafe_allow_html=True)
+                    for x in c["sides"]:
+                        st.markdown(f"- **{route(x['who'])}** wants: {x['wants']}")
+                    done = S.round_dec.get(c["topic"])
+                    if done:
+                        st.markdown(f"✅ **{owner()}** chose: {done}")
+                    elif me != owner():
+                        st.button(f"Answer as {owner()} →", key=f"btn_cas_{S.round}_{j}", on_click=act_as, args=(owner(),))
+                    else:
+                        for k, o in enumerate(c["options"]):
+                            l, r_ = st.columns([5, 1])
+                            l.markdown(f"**{o['label']}**{' · recommended' if k == 0 else ''}  \n<small>{htmllib.escape(o['tradeoff'])}</small>",
+                                       unsafe_allow_html=True)
+                            if r_.button("Choose", key=f"btn_pick_{S.round}_{j}_{k}", use_container_width=True):
+                                picked = (c["topic"], o["label"])
+                        own = st.text_input("Or decide in your own words", key=f"ans_c_{S.round}_{j}", placeholder="Or decide in your own words")
+                        if st.button("Decide", key=f"btn_own_{S.round}_{j}") and own.strip():
+                            picked = (c["topic"], own.strip())
 
             c1, c2 = st.columns(2)
-            submit = c1.button("Submit answers", type="primary", use_container_width=True)
-            stop = c2.button("Enough, write the brief", use_container_width=True,
-                             help="Stop asking; anything still unclear goes into the brief's open issues")
-            if submit or stop:
-                S.qa += [{"q": q, "a": ans, "by": "requester", "round": S.round} for q, ans in answers.items()]
-                ok = True
-                if stop or S.round >= MAX_ROUNDS:
-                    S.clarified = S.stopped = True
-                else:
-                    with st.spinner("AI is checking what your answers still leave open…"):
-                        try:
-                            r = clarify(S.task, a, S.qa, S.round + 1)
-                            a["understanding"], a["questions"], S.remaining = r["understanding"], r["questions"], r["remaining"]
-                            S.round += 1
-                            S.clarified = r["complete"] or not r["questions"]
-                            log("Clarification round", f"Round {S.round - 1}: {len(answers)} answer(s)")
-                        except Exception as e:
-                            S.qa = S.qa[: len(S.qa) - len(answers)]  # Let the requester resubmit the same round
-                            st.error(f"Call failed: {e}")
-                            ok = False
+            submit = c1.button(f"Submit {me}'s answers", type="primary", use_container_width=True, disabled=not mine)
+            stop = c2.button("Enough, write the brief", use_container_width=True, disabled=me != owner(),
+                             help=f"Only the owner ({owner()}) can stop the questioning; anything still unclear goes into the brief's open issues")
+            if submit or stop or picked:
+                if submit:
+                    S.round_ans.update({q: {"a": ans, "by": me} for q, ans in mine.items()})
+                if picked:
+                    S.round_dec[picked[0]] = picked[1]
+                waiting = round_waiting(a)
+                if waiting and not stop:
+                    st.toast(f"Saved. Still waiting for {', '.join(waiting)}")
+                    st.rerun()
+                with st.spinner("AI is checking what the answers still leave open…"):
+                    try:
+                        close_round(a, stop)
+                        ok = True
+                    except Exception as e:
+                        st.error(f"Call failed: {e}")
+                        ok = False
                 if ok:
                     st.rerun()
         else:
@@ -877,14 +1178,14 @@ if page == "Requester":
             else:
                 st.success(f"Request fully explained: {len(S.qa)} answer(s) over {rounds} round(s)")
 
-            if st.button("Generate task brief", type="primary"):
+            if st.button("Regenerate task brief" if S.brief else "Generate task brief", type="primary"):
                 with st.spinner("Turning it into a brief you can start on…"):
                     try:
-                        S.brief, S.demo = write_brief(S.task, a, S.qa, S.remaining), None
-                        S.history = list(S.qa)
+                        S.brief, S.demo = write_brief(S.task, a, cast(), S.qa, S.remaining), None
+                        S.history, S.brief_qa = list(S.qa), len(S.qa)
                         save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
-                        for i, h in enumerate(S.qa):
-                            save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A (requester, pre-work clarification round {h['round']}): {h['a']}")
+                        for i, h in enumerate(filter(is_question, S.qa)):
+                            save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A ({h['by']}, pre-work clarification round {h['round']}): {h['a']}")
                         log("Brief generated", S.brief["goal"])
                         ok = True
                     except Exception as e:
@@ -896,8 +1197,10 @@ if page == "Requester":
     if S.brief:
         b = S.brief
         st.subheader("4. Task brief")
+        if len(S.qa) > S.brief_qa:
+            st.warning("New answers or wishes since this brief was written; regenerate it in section 3 to include them")
         m = st.columns(4)
-        m[0].metric("Questions clarified", len(S.qa))
+        m[0].metric("Questions clarified", sum(map(is_question, S.qa)))
         m[1].metric("Decisions confirmed", len(b["decisions"]))
         m[2].metric("Acceptance criteria", len(b["acceptance_criteria"]))
         m[3].metric("Still undecided", len(b["open_issues"]))
@@ -917,6 +1220,8 @@ if page == "Requester":
         else:
             with st.container(border=True):
                 show_demo(S.demo)
+            if S.demo_steps:
+                st.caption(f"pi worked in workspaces/{workspace_name()}/: {steps_md(S.demo_steps)}")
             c1, c2, c3 = st.columns([3, 1, 1])
             feedback = c1.text_input("What's wrong?", key=f"demo_fb_{S.demo_ver}", label_visibility="collapsed",
                                      placeholder="What's wrong? e.g. bigger buttons, and I need to see history")
@@ -924,15 +1229,15 @@ if page == "Requester":
             c3.download_button("Download HTML", S.demo, file_name=f"{S.task_title or 'demo'}.html", mime="text/html",
                                use_container_width=True)
         if gen:
-            with st.spinner("Turning the brief into a clickable prototype…"):
+            with st.spinner("pi is building the prototype in its workspace…"):
                 try:
-                    S.demo = make_demo(S.task, b, S.history, feedback.strip())
+                    S.demo, S.demo_steps = make_demo(S.task, b, S.history, feedback.strip())
                     S.demo_ver += 1
                     save_doc(f"{S.task_id}-demo", "Demo", f"{S.task_title} · Requirement demo", S.demo)
                     if feedback.strip():
-                        S.history.append({"q": "Change requests for the requirement demo", "a": feedback.strip(), "by": "requester"})
+                        S.history.append({"q": "Change requests for the requirement demo", "a": feedback.strip(), "by": S.acting or owner()})
                         save_doc(f"{S.task_id}-demofb-{S.demo_ver}", "Q&A", "Change requests for the requirement demo",
-                                 f"A (requester, after seeing the demo): {feedback.strip()}")
+                                 f"A ({S.acting or owner()}, after seeing the demo): {feedback.strip()}")
                         log("Demo revised", feedback.strip())
                     else:
                         log("Demo generated", "Generated an interactive prototype from the brief")
@@ -948,21 +1253,25 @@ if page == "Requester":
     if S.pending:
         st.subheader("Worker's questions")
         for i, q in enumerate(list(S.pending)):
+            to = route(S.pending_to.get(q, ""))
             with st.container(border=True):
-                st.markdown(f"**{q}**")
+                st.markdown(f'**{q}** <span class="pill">for {htmllib.escape(to)}</span>', unsafe_allow_html=True)
+                if to != S.acting:
+                    st.button(f"Answer as {to} →", key=f"btn_pas_{i}_{q}", on_click=act_as, args=(to,))
+                    continue
                 reply = st.text_input("Your answer", key=f"pend_{i}_{q}")
                 if st.button("Answer and record", key=f"btn_{i}_{q}") and reply:
-                    S.history.append({"q": q, "a": reply, "by": "requester"})
-                    save_doc(ask_key(q), "Q&A", q, f"A (requester, asked during work): {reply}")
-                    log("Requester answered", f"{q} → {reply}")
-                    S.chat.append({"role": "assistant", "content": f"The requester answered: **{q}**\n\n{reply}"})
+                    S.history.append({"q": q, "a": reply, "by": to})
+                    save_doc(ask_key(q), "Q&A", q, f"A ({to}, asked during work): {reply}")
+                    log("Stakeholder answered", f"{q} → {to}: {reply}")
+                    S.chat.append({"role": "assistant", "content": f"{to} answered: **{q}**\n\n{reply}"})
                     S.pending.remove(q)
                     st.rerun()
 
 elif page == "Worker":
     if not S.brief:
-        st.info("No task brief yet. Post a task in the \"Requester\" view first.")
-        st.button("Go post a task →", on_click=goto, args=("Requester",))
+        st.info("No task brief yet. Post a task in the \"Stakeholders\" view first.")
+        st.button("Go post a task →", on_click=goto, args=("Stakeholders",))
         st.stop()
 
     left, right = st.columns([1, 1])
@@ -975,7 +1284,7 @@ elif page == "Worker":
                 show_demo(S.demo, height=500)
     with right:
         st.markdown("#### Ask whenever you have a question while working")
-        st.caption("If the brief has the answer, it's answered directly with its basis; if not, it's turned into a question for the requester. No guessing.")
+        st.caption("If the brief has the answer, it's answered directly with its basis; if not, it's forwarded to the stakeholder who owns that decision. No guessing.")
         for m in S.chat:
             with st.chat_message(m["role"]):
                 st.markdown(m["content"], unsafe_allow_html=True)
@@ -985,17 +1294,18 @@ elif page == "Worker":
             S.chat.append({"role": "user", "content": q})
             try:
                 with st.spinner("Checking the brief and past Q&A…"):
-                    r = answer_worker(S.task, S.brief, S.history, q)
+                    r = answer_worker(S.task, S.brief, cast(), S.history, q)
                 if r["can_answer"]:
                     msg = f"{r['answer']}\n\n<small>Basis: {r['source']}</small>"
                     save_doc(ask_key(q), "Q&A", q, f"A (AI from the brief, basis: {r['source']}): {r['answer']}")
                     log("AI answered", f"{q} → {r['answer']}")
                 else:
-                    rq = r["question_for_requester"]
+                    rq, who = r["question_for_requester"], route(r["ask_who"])
                     S.pending.append(rq)
-                    save_doc(ask_key(rq), "Q&A", rq, f"{WAITING} (worker asked: {q})")
-                    log("Forwarded to requester", rq)
-                    msg = f"Not enough basis in the brief: {r['answer']}\n\n↪ Forwarded to the requester: **{rq}**"
+                    S.pending_to[rq] = who
+                    save_doc(ask_key(rq), "Q&A", rq, f"{WAITING} (worker asked: {q}; forwarded to {who})")
+                    log("Forwarded to stakeholder", f"{who}: {rq}")
+                    msg = f"Not enough basis in the brief: {r['answer']}\n\n↪ Forwarded to {who}: **{rq}**"
             except Exception as e:
                 msg = f"Call failed: {e}"
             S.chat.append({"role": "assistant", "content": msg})
@@ -1005,8 +1315,8 @@ elif page == "Worker":
 
 else:  # Project Knowledge Base
     if not S.projects:
-        st.info("The knowledge base is empty. After you post a task and generate a brief in the \"Requester\" view, the process is captured here automatically.")
-        st.button("Go post a task →", on_click=goto, args=("Requester",))
+        st.info("The knowledge base is empty. After you post a task and generate a brief in the \"Stakeholders\" view, the process is captured here automatically.")
+        st.button("Go post a task →", on_click=goto, args=("Stakeholders",))
         st.stop()
 
     # ---- Cover list ----
