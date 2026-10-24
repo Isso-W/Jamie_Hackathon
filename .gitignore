@@ -3,3 +3,4 @@ __pycache__/
 workspaces/
 harness/node_modules/
 harness/agent/auth.json
+reson8key.txt
