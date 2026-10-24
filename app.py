@@ -677,9 +677,9 @@ def answer_all(question: str) -> dict:
 
 
 def reson8_key() -> str:
-    if os.environ.get("RESON8_API_KEY"):
-        return os.environ["RESON8_API_KEY"].strip()
-    return RESON8_KEY_FILE.read_text(encoding="utf-8").strip() if RESON8_KEY_FILE.exists() else ""
+    text = os.environ.get("RESON8_API_KEY") or (RESON8_KEY_FILE.read_text(encoding="utf-8") if RESON8_KEY_FILE.exists() else "")
+    # Accept a bare key as well as `reson8key = "..."` style lines
+    return text.split("=", 1)[-1].strip().strip("\"'").strip()
 
 
 def transcribe(audio: bytes, phrases: list) -> str:
@@ -701,7 +701,8 @@ def transcribe(audio: bytes, phrases: list) -> str:
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"Reson8 {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from None
 
-    data = cached("reson8_stt", json.dumps(params), hashlib.sha1(audio).hexdigest(), produce)
+    # Keyed by the audio alone: the phrases only help spelling, and the cast may differ between rehearsal and stage
+    data = cached("reson8_stt", "", hashlib.sha1(audio).hexdigest(), produce)
     segs = data.get("segments") or [{"speaker_id": 0, "text": data.get("text", ""), "start_ms": data.get("start_ms", 0)}]
     turns = []  # Consecutive segments of one speaker become one turn
     for s in segs:

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piano Keyboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#2c2c2c;font-family:sans-serif;user-select:none;-webkit-user-select:none}
+.piano{position:relative;display:inline-flex;height:280px;padding:10px 10px 0;background:#1a1a1a;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.wk{width:60px;height:260px;background:linear-gradient(180deg,#f8f8f8,#fff 8%,#e8e8e8);border:1px solid #aaa;border-top:none;border-radius:0 0 5px 5px;cursor:pointer;z-index:1;flex-shrink:0;margin:0 1px}
+.wk:active,.wk.active{background:linear-gradient(180deg,#ddd,#ccc);transform:translateY(2px)}
+.bk-wrap{position:relative;width:0;height:0;z-index:2;flex-shrink:0}
+.bk{width:36px;height:170px;background:linear-gradient(180deg,#333,#111 60%,#000);border:1px solid #000;border-top:none;border-radius:0 0 4px 4px;cursor:pointer;position:absolute;left:-18px;top:0}
+.bk:active,.bk.active{background:linear-gradient(180deg,#555,#333)}
+details{position:fixed;bottom:8px;left:8px;color:#aaa;font-size:11px;max-width:90vw}
+summary{cursor:pointer;opacity:.6}summary:hover{opacity:1}
+ul{margin:4px 0 0 16px;line-height:1.6}
+@media(max-width:520px){.wk{width:42px;height:200px}.bk{width:26px;height:130px;left:-13px}.piano{height:220px}}
+</style>
+</head>
+<body>
+<div class="piano" id="piano"></div>
+<details><summary>Built from your answers</summary><ul>
+<li>Web browser platform — Q1 Requester</li>
+<li>One octave span (C4–B4) — Q2 Requester</li>
+<li>Mouse/touch input only — Q3 Requester</li>
+<li>Web Audio API oscillators — Q4 Requester</li>
+<li>Realistic black/white keys — Q5 Requester</li>
+<li>Polyphonic playback — Q6 Requester</li>
+</ul></details>
+<script>
+const notes=[
+{n:'C',f:261.63,t:'w'},{n:'C#',f:277.18,t:'b'},
+{n:'D',f:293.66,t:'w'},{n:'D#',f:311.13,t:'b'},
+{n:'E',f:329.63,t:'w'},
+{n:'F',f:349.23,t:'w'},{n:'F#',f:369.99,t:'b'},
+{n:'G',f:392.00,t:'w'},{n:'G#',f:415.30,t:'b'},
+{n:'A',f:440.00,t:'w'},{n:'A#',f:466.16,t:'b'},
+{n:'B',f:493.88,t:'w'}
+];
+let ctx=null;const active={};
+function initAudio(){if(!ctx)ctx=new(window.AudioContext||window.webkitAudioContext)()}
+function startNote(freq){
+initAudio();if(active[freq])return;
+const o=ctx.createOscillator(),g=ctx.createGain();
+o.type='triangle';o.frequency.value=freq;
+g.gain.setValueAtTime(0,ctx.currentTime);
+g.gain.linearRampToValueAtTime(.3,ctx.currentTime+.02);
+o.connect(g);g.connect(ctx.destination);o.start();
+active[freq]={o,g};
+}
+function stopNote(freq){
+const a=active[freq];if(!a)return;
+a.g.gain.cancelScheduledValues(ctx.currentTime);
+a.g.gain.setValueAtTime(a.g.gain.value,ctx.currentTime);
+a.g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.15);
+a.o.stop(ctx.currentTime+.15);delete active[freq];
+}
+const piano=document.getElementById('piano');
+notes.forEach(note=>{
+const freq=note.f;
+const down=e=>{e.preventDefault();el.classList.add('active');startNote(freq)};
+const up=e=>{e.preventDefault();el.classList.remove('active');stopNote(freq)};
+let el;
+if(note.t==='w'){
+el=document.createElement('div');el.className='wk';
+}else{
+const wrap=document.createElement('div');wrap.className='bk-wrap';
+el=document.createElement('div');el.className='bk';
+wrap.appendChild(el);piano.appendChild(wrap);
+}
+el.addEventListener('mousedown',down);
+el.addEventListener('mouseup',up);
+el.addEventListener('mouseleave',up);
+el.addEventListener('touchstart',down,{passive:false});
+el.addEventListener('touchend',up,{passive:false});
+el.addEventListener('touchcancel',up,{passive:false});
+if(note.t==='w')piano.appendChild(el);
+});
+</script>
+</body>
+</html>

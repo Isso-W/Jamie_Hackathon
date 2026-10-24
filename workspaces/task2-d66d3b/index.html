@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Beat Generator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#1a1a2e;color:#eee;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.header{background:#16213e;padding:12px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #0f3460}
+.header h1{font-size:18px;font-weight:600;color:#e94560}
+.header .badge{font-size:11px;background:#0f3460;padding:3px 8px;border-radius:10px;color:#aaa}
+.main{flex:1;display:flex;flex-direction:column;padding:16px;gap:12px;max-height:460px}
+.prompt-row{display:flex;gap:8px}
+.prompt-row input{flex:1;background:#16213e;border:1px solid #0f3460;color:#eee;padding:10px 14px;border-radius:8px;font-size:14px;outline:none}
+.prompt-row input:focus{border-color:#e94560}
+.prompt-row button{background:#e94560;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;white-space:nowrap}
+.prompt-row button:hover{background:#c73652}
+.prompt-row button:disabled{background:#555;cursor:not-allowed}
+.piano-roll{flex:1;background:#16213e;border-radius:8px;border:1px solid #0f3460;position:relative;overflow:hidden;min-height:180px}
+.piano-roll canvas{width:100%;height:100%}
+.overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#555;font-size:13px;pointer-events:none}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.controls button{background:#0f3460;color:#eee;border:none;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.controls button:hover{background:#1a4a8a}
+.controls button.active{background:#e94560}
+.status{font-size:12px;color:#aaa;margin-left:auto}
+
+details.summary{margin-top:4px}
+details.summary summary{font-size:11px;color:#666;cursor:pointer}
+details.summary .map{font-size:11px;color:#888;line-height:1.6;padding:6px 0}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>🎹 AI Beat Studio</h1>
+<span class="badge">AI Beat Demo</span>
+</div>
+<div class="main">
+<div class="prompt-row">
+<input type="text" id="promptInput" placeholder="Describe your beat, e.g. 'chill lo-fi hip hop beat with jazzy chords'" />
+<button id="generateBtn" onclick="generate()">Generate</button>
+</div>
+<div class="piano-roll" id="pianoRoll">
+<canvas id="rollCanvas"></canvas>
+<div class="overlay" id="overlayText">Enter a prompt and click Generate</div>
+</div>
+<div class="controls">
+<button id="playBtn" onclick="togglePlay()" disabled>▶ Play</button>
+<button id="stopBtn" onclick="stopPlayback()" disabled>⏹ Stop</button>
+<button id="downloadBtn" onclick="downloadMIDI()" disabled>💾 Download MIDI</button>
+<span class="status" id="statusText">Ready</span>
+</div>
+</div>
+<details class="summary">
+<summary>Built from your answers</summary>
+<div class="map">
+• MIDI pattern generation — Q1 Requester<br>
+• OpenAI API (simulated in demo) — Q2 Requester<br>
+• Prompt + play scope — Q3 Requester<br>
+• Browser-based web app — Q4 Requester<br>
+• Built-in synth (Tone.js) — Q5/Q7 Requester<br>
+• 4-bar beat length — Q6 Requester<br>
+• Download MIDI file — Q8 Requester<br>
+• Auto-retry invalid output once — Q9 Requester
+</div>
+</details>
+
+<script>
+// Inline Tone.js-like minimal synth engine (no external deps)
+const AudioEngine = (() => {
+  let ctx = null;
+  let isPlaying = false;
+  let startTime = 0;
+  let scheduledNodes = [];
+  let bpm = 120;
+  let totalBeats = 16; // 4 bars * 4 beats
+
+  function init() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+
+  function noteFreq(note) {
+    return 440 * Math.pow(2, (note - 69) / 12);
+  }
+
+  function scheduleNote(note, time, dur, vel) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = noteFreq(note);
+    gain.gain.setValueAtTime((vel || 80) / 127 * 0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(time);
+    osc.stop(time + dur + 0.05);
+    scheduledNodes.push(osc);
+  }
+
+  function play(notes, tempo, onDone) {
+    init();
+    stop();
+    bpm = tempo || 120;
+    const beatDur = 60 / bpm;
+    startTime = ctx.currentTime + 0.05;
+    isPlaying = true;
+    notes.forEach(n => {
+      scheduleNote(n.note, startTime + n.time * beatDur, n.dur * beatDur, n.vel);
+    });
+    const endTime = startTime + totalBeats * beatDur;
+    setTimeout(() => {
+      if (isPlaying) { isPlaying = false; if (onDone) onDone(); }
+    }, (endTime - ctx.currentTime) * 1000);
+  }
+
+  function stop() {
+    scheduledNodes.forEach(o => { try { o.stop(); } catch(e){} });
+    scheduledNodes = [];
+    isPlaying = false;
+  }
+
+  return { init, play, stop, get isPlaying() { return isPlaying; } };
+})();
+
+// MIDI encoding
+function encodeMIDI(notes, bpm) {
+  const tpqn = 480;
+  const numTracks = 1;
+  function writeVarLen(val) {
+    const bytes = [];
+    let v = val >>> 0;
+    bytes.push(v & 0x7F);
+    while (v >>= 7) { bytes.push((v & 0x7F) | 0x80); }
+    return bytes.reverse();
+  }
+  function writeStr(s) { return [...s].map(c => c.charCodeAt(0)); }
+  function write16(v) { return [(v >> 8) & 0xFF, v & 0xFF]; }
+  function write32(v) { return [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF]; }
+
+  const header = [...writeStr('MThd'), ...write32(6), ...write16(0), ...write16(numTracks), ...write16(tpqn)];
+
+  let trackEvents = [];
+  const sorted = [...notes].sort((a, b) => a.tick - b.tick);
+  let lastTick = 0;
+  sorted.forEach(n => {
+    const delta = n.tick - lastTick;
+    trackEvents.push(...writeVarLen(delta));
+    trackEvents.push(0x90, n.note, n.vel || 80);
+    trackEvents.push(...writeVarLen(n.durTicks || tpqn));
+    trackEvents.push(0x80, n.note, 0);
+    lastTick = n.tick + (n.durTicks || tpqn);
+  });
+  trackEvents.push(...writeVarLen(0), 0xFF, 0x2F, 0x00);
+
+  const trackData = [...writeStr('MTrk'), ...write32(trackEvents.length), ...trackEvents];
+  return new Uint8Array([...header, ...trackData]);
+}
+
+// Piano roll renderer
+function drawPianoRoll(notes, totalBeats) {
+  const canvas = document.getElementById('rollCanvas');
+  const container = document.getElementById('pianoRoll');
+  canvas.width = container.clientWidth * 2;
+  canvas.height = container.clientHeight * 2;
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  const c = canvas.getContext('2d');
+  c.scale(2, 2);
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  c.fillStyle = '#16213e';
+  c.fillRect(0, 0, w, h);
+
+  if (!notes || notes.length === 0) return;
+
+  const minNote = Math.min(...notes.map(n => n.note)) - 2;
+  const maxNote = Math.max(...notes.map(n => n.note)) + 2;
+  const noteRange = Math.max(maxNote - minNote, 12);
+  const cellW = w / totalBeats;
+  const cellH = h / noteRange;
+
+  // Grid lines
+  c.strokeStyle = '#1a2744';
+  c.lineWidth = 0.5;
+  for (let i = 0; i <= totalBeats; i++) {
+    const x = i * cellW;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+  }
+  for (let i = 0; i <= noteRange; i++) {
+    const y = i * cellH;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+  }
+  // Bar numbers
+  c.fillStyle = '#444';
+  c.font = '10px sans-serif';
+  for (let i = 0; i < 4; i++) {
+    c.fillText(`Bar ${i + 1}`, i * 4 * cellW + 4, 12);
+  }
+
+  // Notes
+  const colors = ['#e94560', '#ff6b6b', '#ffa502', '#ffdd59', '#7bed9f', '#70a1ff', '#a29bfe'];
+  notes.forEach(n => {
+    const x = n.time * cellW;
+    const y = (maxNote - n.note) * cellH;
+    const nw = Math.max(n.dur * cellW, 2);
+    const nh = Math.max(cellH - 1, 3);
+    c.fillStyle = colors[n.note % colors.length];
+    c.beginPath();
+    c.roundRect(x + 1, y + 1, nw - 2, nh - 2, 2);
+    c.fill();
+  });
+}
+
+// State
+let currentNotes = [];
+let currentBPM = 120;
+let generatedMIDI = null;
+
+function setStatus(msg) { document.getElementById('statusText').textContent = msg; }
+
+function updateButtons() {
+  const hasNotes = currentNotes.length > 0;
+  document.getElementById('playBtn').disabled = !hasNotes;
+  document.getElementById('stopBtn').disabled = !hasNotes;
+  document.getElementById('downloadBtn').disabled = !generatedMIDI;
+}
+
+// Parse LLM JSON response into notes
+function parseLLMOutput(text) {
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const data = JSON.parse(cleaned);
+  const notes = data.notes || data.events || data.midi || [];
+  if (!Array.isArray(notes) || notes.length === 0) throw new Error('No notes found');
+  // Normalize: expect {note, time, dur, vel?}
+  const normalized = notes.map(n => ({
+    note: typeof n.note === 'number' ? n.note : (typeof n.pitch === 'number' ? n.pitch : 60),
+    time: typeof n.time === 'number' ? n.time : (typeof n.start === 'number' ? n.start : 0),
+    dur: typeof n.dur === 'number' ? n.dur : (typeof n.duration === 'number' ? n.duration : 0.5),
+    vel: typeof n.vel === 'number' ? n.vel : (typeof n.velocity === 'number' ? n.velocity : 80),
+    tick: Math.round((typeof n.time === 'number' ? n.time : 0) * 480),
+    durTicks: Math.round((typeof n.dur === 'number' ? n.dur : 0.5) * 480)
+  }));
+  const bpm = data.bpm || data.tempo || 120;
+  return { notes: normalized, bpm };
+}
+
+// Simulated LLM response based on prompt keywords
+function simulateLLM(prompt) {
+  const p = prompt.toLowerCase();
+  const bpm = p.includes('slow') || p.includes('chill') || p.includes('lo-fi') ? 85 : p.includes('fast') || p.includes('energetic') || p.includes('edm') ? 140 : p.includes('trap') ? 130 : 100;
+  const scale = p.includes('minor') || p.includes('dark') || p.includes('sad') ? [60,63,65,67,70,72,75] : p.includes('jazz') ? [60,64,67,69,71,74] : [60,62,64,65,67,69,71];
+  const notes = [];
+  const seed = prompt.length;
+  const rng = (i) => ((seed * 9301 + i * 49297) % 233280) / 233280;
+  // Bass pattern
+  for (let bar = 0; bar < 4; bar++) {
+    const root = scale[Math.floor(rng(bar) * 3)];
+    notes.push({ note: root - 12, time: bar * 4, dur: 1, vel: 100 });
+    notes.push({ note: root - 12, time: bar * 4 + 2, dur: 0.5, vel: 80 });
+    notes.push({ note: root - 12, time: bar * 4 + 3, dur: 0.5, vel: 70 });
+  }
+  // Melody
+  for (let i = 0; i < 16; i++) {
+    if (rng(i + 50) > 0.4) {
+      const n = scale[Math.floor(rng(i + 100) * scale.length)];
+      const dur = rng(i + 200) > 0.7 ? 1 : 0.5;
+      notes.push({ note: n, time: i, dur, vel: Math.floor(60 + rng(i + 300) * 50) });
+    }
+  }
+  // Hi-hat pattern
+  for (let i = 0; i < 32; i++) {
+    if (rng(i + 400) > 0.3) {
+      notes.push({ note: 42, time: i * 0.5, dur: 0.25, vel: Math.floor(40 + rng(i + 500) * 30) });
+    }
+  }
+  // Kick
+  for (let bar = 0; bar < 4; bar++) {
+    notes.push({ note: 36, time: bar * 4, dur: 0.5, vel: 120 });
+    notes.push({ note: 36, time: bar * 4 + 2, dur: 0.5, vel: 100 });
+  }
+  // Snare
+  for (let bar = 0; bar < 4; bar++) {
+    notes.push({ note: 38, time: bar * 4 + 1, dur: 0.5, vel: 110 });
+    notes.push({ note: 38, time: bar * 4 + 3, dur: 0.5, vel: 95 });
+  }
+  return JSON.stringify({ bpm, notes });
+}
+
+async function generate() {
+  const prompt = document.getElementById('promptInput').value.trim();
+  if (!prompt) { setStatus('Enter a prompt first'); return; }
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  document.getElementById('overlayText').style.display = 'none';
+
+  let attempts = 0;
+  const maxAttempts = 2; // Q9: retry once automatically
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    setStatus(attempts === 1 ? 'Generating beat...' : `Retrying (${attempt}/${maxAttempts})...`);
+    try {
+      await new Promise(r => setTimeout(r, 600));
+      const raw = simulateLLM(prompt);
+      const parsed = parseLLMOutput(raw);
+      currentNotes = parsed.notes;
+      currentBPM = parsed.bpm;
+
+      // Build MIDI
+      generatedMIDI = encodeMIDI(currentNotes, currentBPM);
+
+      // Draw
+      drawPianoRoll(currentNotes, 16);
+      setStatus(`✓ Generated (${currentNotes.length} notes, ${currentBPM} BPM)`);
+      updateButtons();
+      btn.disabled = false;
+      return;
+    } catch (e) {
+      console.warn(`Attempt ${attempts} failed:`, e.message);
+      if (attempts >= maxAttempts) {
+        setStatus(`✗ Failed: ${e.message}`);
+        btn.disabled = false;
+        return;
+      }
+    }
+  }
+}
+
+function togglePlay() {
+  if (AudioEngine.isPlaying) {
+    stopPlayback();
+  } else {
+    AudioEngine.play(currentNotes, currentBPM, () => {
+      document.getElementById('playBtn').textContent = '▶ Play';
+      document.getElementById('playBtn').classList.remove('active');
+      setStatus('Playback complete');
+    });
+    document.getElementById('playBtn').textContent = '⏸ Pause';
+    document.getElementById('playBtn').classList.add('active');
+    setStatus(`Playing at ${currentBPM} BPM...`);
+  }
+}
+
+function stopPlayback() {
+  AudioEngine.stop();
+  document.getElementById('playBtn').textContent = '▶ Play';
+  document.getElementById('playBtn').classList.remove('active');
+  setStatus('Stopped');
+}
+
+function downloadMIDI() {
+  if (!generatedMIDI) return;
+  const blob = new Blob([generatedMIDI], { type: 'audio/midi' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ai-beat.mid';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('MIDI file downloaded');
+}
+
+// Handle resize
+window.addEventListener('resize', () => {
+  if (currentNotes.length > 0) drawPianoRoll(currentNotes, 16);
+});
+
+
+</script>
+</body>
+</html>

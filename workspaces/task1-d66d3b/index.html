@@ -2,115 +2,176 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Egg Timer</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,system-ui,sans-serif;background:#faf9f6;color:#2d2a26;display:flex;justify-content:center;min-height:100vh}
-.app{width:100%;max-width:400px;padding:24px 16px;display:flex;flex-direction:column;align-items:center;height:520px}
-h1{font-size:1.4rem;font-weight:700;margin-bottom:24px}
-.presets{display:flex;gap:10px;width:100%;margin-bottom:32px}
-.preset-btn{flex:1;padding:14px 4px;border:2px solid #e0ddd8;border-radius:12px;background:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .15s}
-.preset-btn.active{border-color:#e67e22;background:#fef5ec;color:#c0571f}
-.timer-display{font-size:4.5rem;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-2px;margin-bottom:32px;line-height:1}
-.controls{display:flex;gap:12px;width:100%}
-.btn{flex:1;padding:16px;border:none;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer}
-.btn-start{background:#e67e22;color:#fff}
-.btn-start:disabled{background:#ccc;cursor:default}
-.btn-stop{background:#eee;color:#555}
-details{margin-top:auto;width:100%;font-size:.75rem;color:#888}
-summary{cursor:pointer;padding:8px 0}
-.map{padding:8px 0;line-height:1.7}
+body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#222;max-width:420px;margin:0 auto;height:520px;display:flex;flex-direction:column;overflow:hidden;transition:background .4s}
+body.done{background:#4caf50}
+header{padding:12px 16px;background:#fff;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between}
+h1{font-size:18px;font-weight:700}
+.tabs{display:flex;border-bottom:1px solid #ddd;background:#fff}
+.tab{flex:1;padding:10px;text-align:center;font-size:14px;cursor:pointer;border:none;background:none;color:#666}
+.tab.active{color:#1a73e8;border-bottom:2px solid #1a73e8;font-weight:600}
+.view{flex:1;overflow-y:auto;padding:16px;display:none}
+.view.active{display:block}
+.timer-display{text-align:center;padding:32px 0}
+.time{font-size:64px;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-2px}
+.label{font-size:14px;color:#666;margin-top:8px}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;margin-top:12px}
+.btn-start{background:#1a73e8;color:#fff}
+.btn-stop{background:#e53935;color:#fff}
+.btn-reset{background:#eee;color:#444;margin-top:8px}
+.preset-item{display:flex;align-items:center;justify-content:space-between;padding:12px;background:#fff;border-radius:8px;margin-bottom:8px;border:1px solid #e0e0e0}
+.preset-info{flex:1}
+.preset-name{font-weight:600;font-size:15px}
+.preset-time{font-size:13px;color:#666;margin-top:2px}
+.preset-actions button{border:none;background:none;cursor:pointer;padding:6px 10px;font-size:13px;border-radius:4px}
+.btn-use{color:#1a73e8;font-weight:600}
+.btn-del{color:#e53935}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#555}
+.form-group input{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:15px}
+.btn-save{background:#1a73e8;color:#fff;border:none;padding:12px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;width:100%}
+.empty{text-align:center;color:#999;padding:32px 0;font-size:14px}
+details{padding:8px 16px;font-size:11px;color:#888;background:#fafafa;border-top:1px solid #eee}
+details summary{cursor:pointer;font-weight:600}
+details ul{padding-left:18px;margin-top:4px}
+details li{margin-bottom:2px}
 </style>
 </head>
 <body>
-<div class="app">
-<h1>🥚 Egg Timer</h1>
-<div class="presets">
-<button class="preset-btn" data-preset="soft" onclick="selectPreset('soft')">Soft<br><small>4 min</small></button>
-<button class="preset-btn" data-preset="medium" onclick="selectPreset('medium')">Medium<br><small>7 min</small></button>
-<button class="preset-btn" data-preset="hard" onclick="selectPreset('hard')">Hard<br><small>10 min</small></button>
+<header><h1>🥚 Egg Timer</h1></header>
+<div class="tabs">
+<button class="tab active" data-tab="timer">Timer</button>
+<button class="tab" data-tab="presets">Presets</button>
+<button class="tab" data-tab="add">+ New</button>
 </div>
-<div class="timer-display" id="display">--:--</div>
-<div class="controls">
-<button class="btn btn-start" id="startBtn" onclick="startTimer()" disabled>Start</button>
-<button class="btn btn-stop" onclick="stopTimer()">Stop</button>
+
+<div id="timer" class="view active">
+<div class="timer-display">
+<div class="time" id="countdown">00:00</div>
+<div class="label" id="timerLabel">Select a preset to start</div>
 </div>
+<button class="btn btn-start" id="startBtn" disabled>Start</button>
+<button class="btn btn-reset" id="resetBtn" style="display:none">Reset</button>
+</div>
+
+<div id="presets" class="view">
+<div id="presetList"></div>
+</div>
+
+<div id="add" class="view">
+<div class="form-group"><label>Name</label><input id="pName" placeholder="e.g. Soft boiled"></div>
+<div class="form-group"><label>Minutes</label><input id="pMin" type="number" min="1" max="99" placeholder="5"></div>
+<div class="form-group"><label>Seconds</label><input id="pSec" type="number" min="0" max="59" placeholder="0"></div>
+<button class="btn-save" id="saveBtn">Save Preset</button>
+</div>
+
 <details>
 <summary>Built from your answers</summary>
-<div class="map">
-• Mobile web layout — Q1 Requester<br>
-• Presets only, no custom input — Q2 Requester<br>
-• Audible alarm on completion — Q3 Requester<br>
-• Soft / Medium / Hard presets — Q4 Requester<br>
-• Background timer (Web Worker) — Q5 Requester<br>
-• Countdown display only — Q6 Requester
-</div>
+<ul>
+<li>Mobile Android app — Q1, Q4 Requester</li>
+<li>Custom presets only — Q2, Q5, Q6 Requester</li>
+<li>Local device storage — Q7 Requester</li>
+<li>Color change alert — Q3, Q8 Requester</li>
+<li>Single timer only — Q9 Requester</li>
+</ul>
 </details>
-</div>
+
 <script>
-const PRESETS={soft:4*60,medium:7*60,hard:10*60};
-let selected=null,endTime=null,worker=null,rafId=null;
-const display=document.getElementById('display'),startBtn=document.getElementById('startBtn');
+const LS_KEY='egg_timer_presets';
+let presets=JSON.parse(localStorage.getItem(LS_KEY)||'[]');
+let seconds=0,interval=null,running=false,activePreset='';
 
-// Web Worker for background execution (Q5)
-const workerCode=`self.onmessage=function(e){if(e.data==='tick'){setInterval(()=>self.postMessage('tick'),1000)}}`;
-const blob=new Blob([workerCode],{type:'application/javascript'});
-const workerUrl=URL.createObjectURL(blob);
+const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
 
-function selectPreset(name){
-stopTimer();
-selected=name;
-document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));
-formatDisplay(PRESETS[name]);
-startBtn.disabled=false;
+// Tabs
+$$('.tab').forEach(t=>t.addEventListener('click',()=>{
+$$('.tab').forEach(x=>x.classList.remove('active'));
+$$('.view').forEach(x=>x.classList.remove('active'));
+t.classList.add('active');
+$('#'+t.dataset.tab).classList.add('active');
+}));
+
+function fmt(s){const m=Math.floor(s/60),sec=s%60;return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
+
+function renderPresets(){
+const list=$('#presetList');
+if(!presets.length){list.innerHTML='<div class="empty">No presets yet. Tap + New.</div>';return}
+list.innerHTML=presets.map((p,i)=>`<div class="preset-item"><div class="preset-info"><div class="preset-name">${esc(p.name)}</div><div class="preset-time">${fmt(p.seconds)}</div></div><div class="preset-actions"><button class="btn-use" data-i="${i}">Use</button><button class="btn-del" data-i="${i}">Delete</button></div></div>`).join('');
+list.querySelectorAll('.btn-use').forEach(b=>b.addEventListener('click',()=>selectPreset(+b.dataset.i)));
+list.querySelectorAll('.btn-del').forEach(b=>b.addEventListener('click',()=>deletePreset(+b.dataset.i)));
 }
 
-function formatDisplay(sec){
-const m=Math.floor(sec/60),s=sec%60;
-display.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function selectPreset(i){
+stop();
+seconds=presets[i].seconds;
+activePreset=presets[i].name;
+$('#countdown').textContent=fmt(seconds);
+$('#timerLabel').textContent=activePreset;
+$('#startBtn').disabled=false;
+$('#startBtn').style.display='block';
+$('#resetBtn').style.display='none';
+document.body.classList.remove('done');
+$$('.tab')[0].click();
 }
 
-function startTimer(){
-if(!selected)return;
-stopTimer();
-endTime=Date.now()+PRESETS[selected]*1000;
-worker=new Worker(workerUrl);
-worker.onmessage=tick;
-worker.postMessage('tick');
-tick();
+function deletePreset(i){
+presets.splice(i,1);
+save();renderPresets();
 }
 
-function tick(){
-const left=Math.max(0,Math.round((endTime-Date.now())/1000));
-formatDisplay(left);
-if(left<=0){alarm();stopTimer();}
-}
+function save(){localStorage.setItem(LS_KEY,JSON.stringify(presets))}
 
-function stopTimer(){
-if(worker){worker.terminate();worker=null;}
-if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-if(!selected)display.textContent='--:--';
-else if(endTime){const l=Math.max(0,Math.round((endTime-Date.now())/1000));formatDisplay(l);}
-}
+$('#saveBtn').addEventListener('click',()=>{
+const name=$('#pName').value.trim();
+const m=parseInt($('#pMin').value)||0;
+const s=parseInt($('#pSec').value)||0;
+const total=m*60+s;
+if(!name||total<=0)return;
+presets.push({name,seconds:total});
+save();renderPresets();
+$('#pName').value='';$('#pMin').value='';$('#pSec').value='';
+$$('.tab')[1].click();
+});
 
-function alarm(){
-// Audible alarm using Web Audio API (Q3)
-try{
-const ctx=new(window.AudioContext||window.webkitAudioContext)();
-for(let i=0;i<5;i++){
-const osc=ctx.createOscillator();const gain=ctx.createGain();
-osc.connect(gain);gain.connect(ctx.destination);
-osc.frequency.value=880;osc.type='square';
-gain.gain.value=0.3;
-const t=ctx.currentTime+i*0.3;
-osc.start(t);osc.stop(t+0.15);
+$('#startBtn').addEventListener('click',()=>{
+if(running)return;
+running=true;
+document.body.classList.remove('done');
+$('#startBtn').style.display='none';
+$('#resetBtn').style.display='block';
+interval=setInterval(()=>{
+seconds--;
+$('#countdown').textContent=fmt(seconds);
+if(seconds<=0){
+stop();
+document.body.classList.add('done');
+$('#timerLabel').textContent=activePreset+' — Done!';
+$('#resetBtn').style.display='block';
 }
-}catch(e){}
-navigator.vibrate&&navigator.vibrate([200,100,200,100,200]);
-display.textContent='Done!';
-setTimeout(()=>{if(selected)formatDisplay(PRESETS[selected]);},3000);
-}
+},1000);
+});
+
+function stop(){clearInterval(interval);running=false}
+
+$('#resetBtn').addEventListener('click',()=>{
+stop();
+document.body.classList.remove('done');
+const p=presets.find(x=>x.name===activePreset);
+seconds=p?p.seconds:0;
+$('#countdown').textContent=fmt(seconds);
+$('#timerLabel').textContent=activePreset;
+$('#startBtn').style.display='block';
+$('#startBtn').disabled=!p;
+$('#resetBtn').style.display='none';
+});
+
+renderPresets();
 </script>
 </body>
 </html>
