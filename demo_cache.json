@@ -1,0 +1,581 @@
+{
+ "95659139b5f20f2442df3f4862a0a3a20b2c16f8": {
+  "title": "登录页添加记住我功能",
+  "understanding": "在网页登录页实现“记住我”选项，使用户勾选后下次访问无需重新登录，并确保在下周演示前完成上线。",
+  "deadline": "2026-10-30",
+  "subtasks": [
+   {
+    "title": "确认会话与Token机制",
+    "detail": "梳理当前登录态维持方式（Cookie/Token/Session），确定“记住我”是延长现有Token有效期还是签发独立的Refresh Token。"
+   },
+   {
+    "title": "前端登录表单改造",
+    "detail": "在登录页添加“记住我”复选框，将用户选择状态传递给登录接口，并处理默认选中逻辑及UI适配。"
+   },
+   {
+    "title": "后端接口与安全策略调整",
+    "detail": "修改登录接口支持长会话或Refresh Token签发，配置相应的过期时间、存储方式（HttpOnly/Secure）及安全校验。"
+   },
+   {
+    "title": "演示环境部署与验证",
+    "detail": "在演示环境中完成功能部署，验证跨浏览器/设备的持久化效果，确保演示流程顺畅无Bug。"
+   }
+  ],
+  "known": [
+   "当前日期为2026-10-23",
+   "功能载体为网页登录页",
+   "交付节点为下周演示前（即2026-10-30前）",
+   "核心目标是减少用户重复登录操作"
+  ],
+  "questions": [
+   {
+    "question": "“记住我”的具体时长和安全级别要求是什么？",
+    "why": "这直接决定技术方案是简单延长Session还是引入Refresh Token体系，以及是否需要配合设备指纹或二次验证，影响开发工作量和安全合规性。",
+    "options": [
+     "7天免登",
+     "30天免登",
+     "永久免登（直到手动退出）",
+     "遵循现有安全规范由技术侧定"
+    ]
+   },
+   {
+    "question": "下周演示使用的是生产环境还是独立的演示/测试环境？",
+    "why": "若涉及生产环境，需考虑数据隔离和回滚风险；若是独立环境，需确认该环境是否已具备完整的认证服务依赖，避免演示时因环境差异导致功能失效。",
+    "options": [
+     "生产环境",
+     "独立的演示/测试环境",
+     "本地开发环境演示"
+    ]
+   },
+   {
+    "question": "如果用户在其他设备登录或修改密码，“记住我”的状态是否需要自动失效？",
+    "why": "这关系到账号安全兜底策略。若不联动失效，演示或实际使用中可能出现账号被盗用风险；若需联动，则后端需增加Token黑名单或版本校验逻辑。",
+    "options": [
+     "需要立即失效所有记住我状态",
+     "仅在当前设备生效，不影响其他端",
+     "暂不考虑，优先保证演示功能可用"
+    ]
+   }
+  ],
+  "needs_meeting": false,
+  "meeting_reason": "当前问题可通过异步沟通确认，暂无多方利益冲突或复杂决策需当面协调。"
+ },
+ "b9a4eebde82136fec7f0578dc00436ecba831ba0": {
+  "goal": "在网页登录页新增“记住我”功能，使用户勾选后下次访问自动保持登录状态，并确保该功能于10月30日前在生产环境可用以支持演示。",
+  "in_scope": [
+   "登录页UI新增“记住我”复选框及交互逻辑",
+   "后端登录接口改造以支持长期凭证或Refresh Token机制",
+   "前端Token存储与自动续期/免登逻辑实现",
+   "生产环境部署与验证（截止10月30日）"
+  ],
+  "out_of_scope": [
+   "“记住我”的安全策略制定（如最长有效期、跨设备规则、二次验证豁免等）",
+   "非登录流程的会话管理改造",
+   "演示环境或预发布环境的单独适配"
+  ],
+  "acceptance_criteria": [
+   "用户在登录页勾选“记住我”并成功登录后，关闭浏览器再重新打开访问站点时自动保持登录状态",
+   "用户未勾选“记住我”时，关闭浏览器后会话正常失效，行为与现有逻辑一致",
+   "功能已于10月30日前部署至生产环境并可正常演示",
+   "后端登录接口已完成改造并支持长期凭证签发与校验"
+  ],
+  "subtasks": [
+   {
+    "title": "设计并实现后端长期凭证机制",
+    "detail": "由于现有体系完全不支持，需重新设计Refresh Token或等效长期凭证方案，完成登录接口改造，支持根据“记住我”标识签发不同生命周期的凭证。"
+   },
+   {
+    "title": "前端登录页集成“记住我”选项",
+    "detail": "在登录表单中添加复选框，将用户选择传递给登录接口；实现Token安全存储及页面加载时的自动登录检测逻辑。"
+   },
+   {
+    "title": "联调测试与生产环境部署",
+    "detail": "完成前后端联调，验证勾选/未勾选两种场景下的会话保持与失效行为；确保10月30日前完成生产环境发布与演示验证。"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "功能必须于10月30日前在生产环境上线可用",
+    "source": "问：下周演示的具体日期是哪天？演示使用的是生产环境、预发布环境还是独立演示环境？答：10月30日 生产环境"
+   },
+   {
+    "decision": "后端需从零设计并实现Refresh Token或长期凭证机制，无法复用现有能力",
+    "source": "问：现有登录体系是否已支持Refresh Token或长期凭证机制？后端登录接口能否在本周内完成改造？答：完全不支持需重新设计"
+   }
+  ],
+  "open_issues": [
+   "“记住我”的安全策略尚未明确（包括最长保持登录时长、是否允许跨设备生效、是否需要二次验证豁免等），需等待安全团队另行指定，可能影响凭证生命周期设计与合规性"
+  ]
+ },
+ "f5a10eb62ebe184f657c6193ea37bb421d97d4ce": {
+  "can_answer": false,
+  "answer": "任务简报和历史问答中未明确“记住我”的具体有效期。该信息属于安全策略范畴，目前状态为“由安全团队另行指定”，尚未有明确结论。",
+  "source": "任务简报 open_issues 及 decisions；历史问答中需求方回复“由安全团队另行指定”",
+  "question_for_requester": "“记住我”功能的具体有效期是多久？（例如：7天、30天或永久？）由于该参数直接影响后端长期凭证/Refresh Token的生命周期设计，且当前安全策略尚未明确，请提供具体时长要求以便开展开发工作。"
+ },
+ "179f340d0c582dd396ec7eda383ed2d41ede70e7": {
+  "goal": "在网页登录页新增“记住我”功能，使用户勾选后7天内免登录，并在下周演示前于生产环境上线可用。",
+  "in_scope": [
+   "登录页增加“记住我”复选框UI及交互",
+   "实现勾选后7天免登的会话/Token持久化机制",
+   "用户修改密码时立即失效该用户所有“记住我”状态",
+   "用户在其他设备登录时立即失效该用户所有“记住我”状态",
+   "在生产环境部署并完成验证"
+  ],
+  "out_of_scope": [
+   "除7天外的其他免登时长配置",
+   "演示环境或测试环境的单独部署与验证",
+   "未勾选“记住我”时的正常登录流程改造",
+   "多因素认证、单点登录等其他认证方式集成"
+  ],
+  "acceptance_criteria": [
+   "登录页可见“记住我”复选框，勾选并成功登录后关闭浏览器再打开（7天内）无需重新登录",
+   "不勾选“记住我”时，关闭浏览器后会话按原有逻辑失效，不受本次改动影响",
+   "用户修改密码后，该账号在所有设备上的“记住我”状态立即失效，访问受保护页面需重新登录",
+   "用户在新设备登录后，该账号在其他设备上的“记住我”状态立即失效",
+   "功能已在生产环境部署并可正常使用，满足下周演示要求"
+  ],
+  "subtasks": [
+   {
+    "title": "登录页前端改造",
+    "detail": "在登录表单中添加“记住我”复选框，提交登录时将勾选状态传递给后端；确保样式与现有登录页一致。"
+   },
+   {
+    "title": "后端免登凭证生成与校验",
+    "detail": "当用户勾选“记住我”且登录成功时，签发有效期为7天的持久化凭证（如Refresh Token），并在后续请求中支持自动续期或静默刷新；未勾选时维持原会话行为。"
+   },
+   {
+    "title": "凭证失效联动机制",
+    "detail": "在修改密码接口和新设备登录成功逻辑中，增加清除该用户所有持久化凭证的步骤，确保“记住我”状态立即失效。"
+   },
+   {
+    "title": "数据存储与安全加固",
+    "detail": "设计持久化凭证的存储方案（如数据库表），包含用户标识、凭证哈希、创建时间等字段；凭证仅存哈希值，传输使用HTTPS，防止泄露后可逆还原。"
+   },
+   {
+    "title": "生产环境部署与演示验收",
+    "detail": "完成代码合并、发布至生产环境，并按验收标准进行端到端验证，确认下周演示可正常使用。"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "“记住我”免登时长固定为7天",
+    "source": "问：“记住我”的具体时长和安全级别要求是什么？答：7天免登"
+   },
+   {
+    "decision": "功能直接在生产环境上线，不单独准备演示/测试环境",
+    "source": "问：下周演示使用的是生产环境还是独立的演示/测试环境？答：生产环境"
+   },
+   {
+    "decision": "用户在其他设备登录或修改密码时，需立即失效该用户所有“记住我”状态",
+    "source": "问：如果用户在其他设备登录或修改密码，“记住我”的状态是否需要自动失效？答：需要立即失效所有记住我状态"
+   }
+  ],
+  "open_issues": [
+   "持久化凭证的具体技术选型（如JWT Refresh Token、数据库Opaque Token等）尚未明确，需结合现有认证架构确定",
+   "“其他设备登录”的判定口径未定义（是否基于IP/User-Agent/设备指纹，或仅以新会话创建为准），可能影响失效触发准确性",
+   "生产环境上线的具体发布时间窗口和回滚预案尚未确认，需协调运维与业务方",
+   "是否需要向已登录用户展示“记住我”功能变更提示或隐私合规告知尚未明确"
+  ]
+ },
+ "c361c833ed9007143dd196902e75016c73706322": {
+  "can_answer": true,
+  "answer": "“记住我”功能的免登有效期固定为7天。",
+  "source": "任务简报 decisions 部分：“‘记住我’免登时长固定为7天”；历史问答中需求方确认“7天免登”。",
+  "question_for_requester": ""
+ },
+ "4db0b60f77d28ddcab2ac3f74cbaff42dd4662e4": {
+  "title": "开发日常算账计算器原型",
+  "understanding": "用户需要一个比手机自带计算器更适合日常记账/算账场景的工具，并要求在本周内（2026-10-30前）交付一个可演示的初步原型。",
+  "deadline": "2026-10-30",
+  "subtasks": [
+   {
+    "title": "明确核心痛点与功能",
+    "detail": "调研或确认用户觉得自带计算器'不好用'的具体场景（如：连续运算、历史记录、金额格式等），确定MVP功能列表"
+   },
+   {
+    "title": "选定技术栈与平台",
+    "detail": "根据使用场景确定是开发Web应用、桌面端还是移动端小程序，并搭建基础项目框架"
+   },
+   {
+    "title": "设计算账专用交互",
+    "detail": "针对算账场景优化UI布局，例如增加历史算式显示、千分位分隔符、大写金额转换或快捷记账按钮"
+   },
+   {
+    "title": "实现核心计算逻辑",
+    "detail": "开发支持连续运算、括号优先级及浮点数精度处理的核心计算引擎，确保金额计算准确"
+   },
+   {
+    "title": "构建可演示原型",
+    "detail": "完成核心功能的联调与基础样式美化，打包或部署一个可供用户在周五前体验的最小可用版本"
+   }
+  ],
+  "known": [
+   "当前日期为2026-10-23",
+   "用途是日常算账",
+   "对标对象是手机自带计算器",
+   "本周五（2026-10-30）前需要看到初步样子"
+  ],
+  "questions": [
+   {
+    "question": "您提到比自带计算器好用，具体是指哪些算账场景下的痛点？",
+    "why": "自带计算器已满足基础运算，不明确具体痛点（如需不需要历史回溯、多行算式、汇率换算等）就无法定义MVP范围，可能导致做出来的原型依然不符合预期",
+    "options": [
+     "需要看历史计算记录/步骤",
+     "需要支持多行算式同时显示",
+     "需要金额格式化(千分位/大写)",
+     "其他特定场景"
+    ]
+   },
+   {
+    "question": "这个计算器主要在什么设备上使用？",
+    "why": "决定了技术选型和原型的交付形式，Web、微信小程序或原生App的开发周期差异巨大，直接影响本周能否拿出可演示版本",
+    "options": [
+     "电脑浏览器(Web)",
+     "微信小程序",
+     "手机App(iOS/Android)",
+     "桌面客户端"
+    ]
+   },
+   {
+    "question": "本周看到的'样子'期望达到什么程度？",
+    "why": "一周时间紧张，需对齐预期：是仅UI交互演示、核心功能可用的MVP，还是包含完整测试的稳定版，避免交付时产生落差",
+    "options": [
+     "纯UI交互演示(无真实计算)",
+     "核心功能可用的MVP",
+     "功能完整且稳定的版本"
+    ]
+   }
+  ],
+  "needs_meeting": false,
+  "meeting_reason": "需求虽模糊但可通过选项快速收敛，无需多方利益协调，通过异步澄清即可在一周内推进原型开发"
+ },
+ "a7d194335511032cb2886d3601ee14aff1ca3ebd": {
+  "goal": "在本周内（2026-10-30前）交付一个Web端计算器的纯UI交互演示原型，重点展示历史计算记录/步骤功能，无需实现真实计算逻辑。",
+  "in_scope": [
+   "Web端计算器UI设计与实现",
+   "历史计算记录/步骤的展示交互演示",
+   "基础计算器按键布局与视觉样式",
+   "纯前端静态原型（无后端、无真实计算逻辑）"
+  ],
+  "out_of_scope": [
+   "真实数学计算逻辑实现",
+   "后端服务或数据存储",
+   "移动端适配或原生App开发",
+   "用户账号系统或数据持久化",
+   "除历史记录外的其他高级算账功能"
+  ],
+  "acceptance_criteria": [
+   "原型可在主流电脑浏览器中正常打开并交互",
+   "界面包含完整的计算器按键区域和历史记录展示区域",
+   "点击按键或操作时能模拟显示历史记录/步骤的UI变化效果",
+   "所有交互均为纯UI演示，不依赖任何真实计算引擎",
+   "在2026-10-30前可访问并进行演示"
+  ],
+  "subtasks": [
+   {
+    "title": "设计计算器UI线框图与交互流程",
+    "detail": "基于'查看历史计算记录/步骤'的核心需求，设计包含按键区和历史记录区的Web端布局，明确历史记录的展示方式及与按键操作的联动交互逻辑。"
+   },
+   {
+    "title": "实现纯UI交互原型",
+    "detail": "使用HTML/CSS/JS构建静态原型，实现按键点击后历史记录区域的模拟更新效果，确保无真实计算逻辑但交互反馈符合预期。"
+   },
+   {
+    "title": "浏览器兼容性测试与演示准备",
+    "detail": "在Chrome、Edge等主流电脑浏览器中验证原型显示与交互正常，整理演示说明文档，确保2026-10-30前可顺利展示。"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "核心差异化功能为支持查看历史计算记录和步骤",
+    "source": "问：您提到比自带计算器好用，具体是指哪些算账场景下的痛点？答：需要看历史计算记录/步骤"
+   },
+   {
+    "decision": "目标平台为电脑浏览器（Web端）",
+    "source": "问：这个计算器主要在什么设备上使用？答：电脑浏览器(Web)"
+   },
+   {
+    "decision": "本周交付物为纯UI交互演示原型，不包含真实计算逻辑",
+    "source": "问：本周看到的'样子'期望达到什么程度？答：纯UI交互演示(无真实计算)"
+   }
+  ],
+  "open_issues": [
+   "历史记录的具体展示形式（如列表、时间轴、可折叠步骤详情等）尚未明确",
+   "UI风格偏好（简约、拟物、深色模式等）未确认",
+   "是否需要支持键盘输入操作未确定"
+  ]
+ },
+ "04d0bf8282350ba7e2454739981d8776c688e47f": {
+  "text": "```html\n<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>算账计算器 - 交互原型</title>\n<style>\n*{margin:0;padding:0;box-sizing:border-box;}\nbody{font-family:-apple-system,\"Segoe UI\",\"Microsoft YaHei\",sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh;color:#333;}\n.app{display:flex;width:680px;max-width:98vw;height:500px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.1);overflow:hidden;}\n.calc-panel{flex:0 0 340px;display:flex;flex-direction:column;background:#fafbfc;border-right:1px solid #e8eaed;}\n.display{padding:20px 20px 12px;text-align:right;min-height:100px;display:flex;flex-direction:column;justify-content:flex-end;}\n.expr{font-size:14px;color:#888;min-height:22px;word-break:break-all;line-height:1.4;}\n.result{font-size:36px;font-weight:600;color:#1a1a2e;margin-top:4px;letter-spacing:-.5px;overflow:hidden;text-overflow:ellipsis;}\n.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px 12px 12px;flex:1;}\n.key{border:none;border-radius:10px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s;background:#fff;color:#333;box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:500;user-select:none;}\n.key:hover{background:#f0f0f0;box-shadow:0 2px 6px rgba(0,0,0,.1);}\n.key:active{transform:scale(.95);background:#e4e4e4;}\n.key.op{background:#e8f0fe;color:#1a73e8;}\n.key.op:hover{background:#d2e3fc;}\n.key.op.active-op{background:#1a73e8;color:#fff;}\n.key.eq{background:#1a73e8;color:#fff;font-size:22px;}\n.key.eq:hover{background:#1557b0;}\n.key.eq:active{background:#12458a;}\n.key.fn{background:#f1f3f4;color:#5f6368;font-size:15px;}\n.key.fn:hover{background:#e0e2e5;}\n.key.zero{grid-column:span 2;}\n.hist-panel{flex:1;display:flex;flex-direction:column;min-width:0;}\n.hist-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e8eaed;background:#fafbfc;}\n.hist-header h3{font-size:15px;font-weight:600;color:#1a1a2e;display:flex;align-items:center;gap:6px;}\n.hist-header h3::before{content:\"📋\";font-size:14px;}\n.clear-btn{border:none;background:none;color:#1a73e8;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:6px;font-weight:500;}\n.clear-btn:hover{background:#e8f0fe;}\n.hist-list{flex:1;overflow-y:auto;padding:8px 12px;}\n.hist-list::-webkit-scrollbar{width:4px;}\n.hist-list::-webkit-scrollbar-thumb{background:#ccc;border-radius:2px;}\n.hist-item{padding:12px 14px;border-radius:10px;margin-bottom:6px;cursor:pointer;transition:all .15s;border:1.5px solid transparent;background:#f8f9fa;}\n.hist-item:hover{background:#f0f4ff;border-color:#c5d7f7;}\n.hist-item.active{background:#e8f0fe;border-color:#1a73e8;}\n.hist-expr{font-size:13px;color:#666;margin-bottom:4px;word-break:break-all;}\n.hist-result{font-size:20px;font-weight:600;color:#1a1a2e;}\n.hist-time{font-size:11px;color:#aaa;margin-top:4px;}\n.hist-steps{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed #d0d7e2;}\n.hist-item.expanded .hist-steps{display:block;}\n.step{font-size:12px;color:#555;padding:3px 0;display:flex;align-items:center;gap:6px;}\n.step::before{content:\"\";display:inline-block;width:6px;height:6px;border-radius:50%;background:#1a73e8;flex-shrink:0;}\n.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#bbb;font-size:14px;gap:8px;}\n.empty-state span{font-size:36px;}\n.tag{display:inline-block;font-size:10px;background:#e8f0fe;color:#1a73e8;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:500;}\n</style>\n</head>\n<body>\n<div class=\"app\">\n  <div class=\"calc-panel\">\n    <div class=\"display\">\n      <div class=\"expr\" id=\"expr\"></div>\n      <div class=\"result\" id=\"result\">0</div>\n    </div>\n    <div class=\"keys\" id=\"keys\">\n      <button class=\"key fn\" data-v=\"C\">AC</button>\n      <button class=\"key fn\" data-v=\"back\">⌫</button>\n      <button class=\"key fn\" data-v=\"%\">%</button>\n      <button class=\"key op\" data-v=\"÷\">÷</button>\n      <button class=\"key\" data-v=\"7\">7</button>\n      <button class=\"key\" data-v=\"8\">8</button>\n      <button class=\"key\" data-v=\"9\">9</button>\n      <button class=\"key op\" data-v=\"×\">×</button>\n      <button class=\"key\" data-v=\"4\">4</button>\n      <button class=\"key\" data-v=\"5\">5</button>\n      <button class=\"key\" data-v=\"6\">6</button>\n      <button class=\"key op\" data-v=\"-\">−</button>\n      <button class=\"key\" data-v=\"1\">1</button>\n      <button class=\"key\" data-v=\"2\">2</button>\n      <button class=\"key\" data-v=\"3\">3</button>\n      <button class=\"key op\" data-v=\"+\">+</button>\n      <button class=\"key zero\" data-v=\"0\">0</button>\n      <button class=\"key\" data-v=\".\">.</button>\n      <button class=\"key eq\" data-v=\"=\">=</button>\n    </div>\n  </div>\n  <div class=\"hist-panel\">\n    <div class=\"hist-header\">\n      <h3>计算记录</h3>\n      <button class=\"clear-btn\" id=\"clearHist\">清空</button>\n    </div>\n    <div class=\"hist-list\" id=\"histList\">\n      <div class=\"empty-state\" id=\"emptyState\"><span>🧮</span>点击按键开始算账<br><small style=\"color:#ccc\">历史记录将显示在这里，可展开查看步骤</small></div>\n    </div>\n  </div>\n</div>\n\n<script>\n(function(){\n  const exprEl=document.getElementById('expr');\n  const resEl=document.getElementById('result');\n  const histList=document.getElementById('histList');\n  const emptyState=document.getElementById('emptyState');\n  let currentInput='0';\n  let expression='';\n  let justEvaluated=false;\n  let history=[];\n  let stepCounter=0;\n  let currentSteps=[];\n\n  // Mock calculation\n  function mockCalc(expr){\n    try{\n      let e=expr.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-');\n      let r=Function('\"use strict\";return ('+e+')')();\n      if(!isFinite(r))return 'Error';\n      return parseFloat(r.toFixed(8)).toString();\n    }catch(ex){return 'Error';}\n  }\n\n  function generateSteps(expr,result){\n    let steps=[];\n    let tokens=expr.match(/[\\d.]+|[+\\-×÷%]/g)||[];\n    if(tokens.length<3){\n      steps.push('输入表达式: '+expr);\n      steps.push('得出结果: '+result);\n      return steps;\n    }\n    // Simulate step-by-step for multi-operation expressions\n    let running=tokens[0];\n    steps.push('开始计算: '+tokens[0]);\n    for(let i=1;i<tokens.length-1;i+=2){\n      let op=tokens[i],num=tokens[i+1];\n      if(!num)break;\n      let partialExpr=running+' '+op+' '+num;\n      let partialRes=mockCalc(partialExpr);\n      steps.push(partialExpr+' = '+partialRes);\n      running=partialRes;\n    }\n    steps.push('最终结果: '+result);\n    return steps;\n  }\n\n  function formatTime(){\n    let d=new Date();\n    return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');\n  }\n\n  function updateDisplay(){\n    exprEl.textContent=expression;\n    resEl.textContent=currentInput;\n  }\n\n  function addHistory(expr,result,steps,time){\n    emptyState.style.display='none';\n    let item=document.createElement('div');\n    item.className='hist-item';\n    let stepsHtml=steps.map(s=>'<div class=\"step\">'+s+'</div>').join('');\n    item.innerHTML='<div class=\"hist-expr\">'+expr+' =</div><div class=\"hist-result\">'+result+(steps.length>2?'<span class=\"tag\">多步</span>':'')+'</div><div class=\"hist-time\">'+time+'</div><div class=\"hist-steps\">'+stepsHtml+'</div>';\n    item.addEventListener('click',function(){\n      document.querySelectorAll('.hist-item').forEach(el=>el.classList.remove('expanded','active'));\n      this.classList.toggle('expanded');\n      this.classList.add('active');\n      // Recall to display\n      exprEl.textContent=expr+' =';\n      resEl.textContent=result;\n    });\n    histList.insertBefore(item,histList.firstChild);\n    history.push({expr,result,steps,time});\n  }\n\n  function clearActiveOp(){\n    document.querySelectorAll('.key.op').forEach(k=>k.classList.remove('active-op'));\n  }\n\n  function setActiveOp(v){\n    clearActiveOp();\n    document.querySelectorAll('.key.op').forEach(k=>{if(k.dataset.v===v)k.classList.add('active-op');});\n  }\n\n  document.getElementById('keys').addEventListener('click',function(e){\n    let btn=e.target.closest('.key');\n    if(!btn)return;\n    let v=btn.dataset.v;\n\n    if(v==='C'){\n      currentInput='0';expression='';justEvaluated=false;currentSteps=[];stepCounter=0;\n      clearActiveOp();updateDisplay();return;\n    }\n    if(v==='back'){\n      if(justEvaluated)return;\n      if(currentInput.length>1){currentInput=currentInput.slice(0,-1);}else{currentInput='0';}\n      updateDisplay();return;\n    }\n\n    if(['+','-','×','÷','%'].includes(v)){\n      if(justEvaluated){\n        expression=currentInput+' '+v+' ';\n        justEvaluated=false;\n      }else{\n        if(expression&&currentInput!=='0'){\n          // chain calc\n          let fullExpr=expression+currentInput;\n          let res=mockCalc(fullExpr);\n          currentSteps.push(fullExpr+' = '+res);\n          expression=res+' '+v+' ';\n          currentInput='0';\n        }else{\n          expression=(currentInput==='0'?'0':currentInput)+' '+v+' ';\n        }\n      }\n      currentInput='0';\n      setActiveOp(v);\n      updateDisplay();return;\n    }\n\n    if(v==='='){\n      clearActiveOp();\n      if(!expression)return;\n      let fullExpr=expression+currentInput;\n      let result=mockCalc(fullExpr);\n      let steps=generateSteps(fullExpr,result);\n      let time=formatTime();\n      addHistory(fullExpr,result,steps,time);\n      expression=fullExpr+' =';\n      currentInput=result;\n      justEvaluated=true;\n      updateDisplay();return;\n    }\n\n    // Number or dot\n    clearActiveOp();\n    if(justEvaluated){\n      currentInput=v==='.'?'0.':v;\n      expression='';justEvaluated=false;\n    }else{\n      if(currentInput==='0'&&v!=='.'){currentInput=v;}\n      else if(v==='.'&&currentInput.includes('.')){/* skip */}\n      else{currentInput+=v;}\n    }\n    updateDisplay();\n  });\n\n  document.getElementById('clearHist').addEventListener('click',function(){\n    histList.innerHTML='<div class=\"empty-state\" id=\"emptyState\"><span>🧮</span>点击按键开始算账<br><small style=\"color:#ccc\">历史记录将显示在这里，可展开查看步骤</small></div>';\n    history=[];\n  });\n\n  // Pre-populate some demo history\n  setTimeout(()=>{\n    let demos=[\n      {expr:'128 × 3 + 50',result:'434',steps:['开始计算: 128','128 × 3 = 384','384 + 50 = 434','最终结果: 434'],time:'09:15:32'},\n      {expr:'2580 ÷ 12',result:'215',steps:['输入表达式: 2580 ÷ 12','得出结果: 215'],time:'09:12:08'},\n      {expr:'99.5 + 128 + 45.8',result:'273.3',steps:['开始计算: 99.5','99.5 + 128 = 227.5','227.5 + 45.8 = 273.3','最终结果: 273.3'],time:'09:08:45'}\n    ];\n    demos.forEach(d=>addHistory(d.expr,d.result,d.steps,d.time));\n  },300);\n\n  updateDisplay();\n})();\n</script>\n</body>\n</html>\n```"
+ },
+ "db60993f04241ef4e4947db0a2ad206056ace874": {
+  "title": "Bookkeeping Calculator MVP",
+  "understanding": "Develop a user-friendly calculator application tailored for everyday bookkeeping that offers improved UX over standard phone calculators, with a functional prototype deliverable by end of this week.",
+  "deadline": "2026-10-30",
+  "subtasks": [
+   {
+    "title": "Define Core Bookkeeping Features",
+    "detail": "Identify specific bookkeeping workflows (e.g., running totals, tax calculation, category tagging) that distinguish this from a standard calculator to scope the MVP."
+   },
+   {
+    "title": "Design Enhanced UX/UI",
+    "detail": "Create wireframes focusing on 'nicer' aesthetics and usability improvements like larger tap targets, history visibility, or dark mode."
+   },
+   {
+    "title": "Implement Calculation Logic",
+    "detail": "Build the core arithmetic engine with support for bookkeeping-specific functions and persistent memory/tape functionality."
+   },
+   {
+    "title": "Develop Frontend Prototype",
+    "detail": "Code the interactive UI based on designs, ensuring responsive layout and smooth interactions for the weekly demo."
+   },
+   {
+    "title": "User Testing & Refinement",
+    "detail": "Conduct quick usability testing with the requester to validate the 'nicer than phone' requirement before the Friday deadline."
+   }
+  ],
+  "known": [
+   "Current date is 2026-10-24",
+   "Deadline for initial visibility is this week (approx. 2026-10-30)",
+   "Must be superior in UX/utility to default phone calculator",
+   "Primary use case is everyday bookkeeping"
+  ],
+  "questions": [
+   {
+    "question": "What specific bookkeeping pain points does your current phone calculator fail to address?",
+    "why": "'Nicer' is subjective; without knowing if you need running totals, tax buttons, or export features, we risk building a pretty but useless tool.",
+    "options": [
+     "Running total/tape display",
+     "Tax/VAT percentage buttons",
+     "Category tagging/notes",
+     "Export to CSV/PDF"
+    ]
+   },
+   {
+    "question": "What platform should this prototype target for this week's demo?",
+    "why": "Building native iOS/Android takes longer than a PWA/web app; platform choice dictates whether we can realistically ship a polished version in 6 days.",
+    "options": [
+     "Web App (PWA)",
+     "iOS Native",
+     "Android Native",
+     "Desktop (Mac/Windows)"
+    ]
+   },
+   {
+    "question": "Does 'see something this week' mean a clickable design prototype or a fully functional coded app?",
+    "why": "A high-fidelity design prototype is guaranteed in 6 days; a functional bug-free app with custom logic carries significant schedule risk.",
+    "options": [
+     "Functional coded app",
+     "Interactive design prototype",
+     "Hybrid (core feature working + design for rest)"
+    ]
+   }
+  ],
+  "needs_meeting": true,
+  "meeting_reason": "The definition of 'nicer' and specific bookkeeping needs are highly subjective and critical for scoping a 6-day delivery; a brief sync is needed to align on MVP features vs. nice-to-haves to avoid missing the Friday deadline."
+ },
+ "955dd74225a34536783e3a8512832e0055e6bc9e": {
+  "goal": "Build a working coded MVP of an iOS bookkeeping calculator with visible calculation history/tape, delivering core math functionality within the current week.",
+  "in_scope": [
+   "iOS mobile application development",
+   "Core arithmetic operations (add, subtract, multiply, divide)",
+   "Visible calculation history/tape display",
+   "Basic UI polish exceeding standard iOS calculator aesthetics",
+   "MVP delivery within current week"
+  ],
+  "out_of_scope": [
+   "Advanced bookkeeping features (categories, reports, export)",
+   "Android or web platform support",
+   "Cloud sync or data persistence beyond session",
+   "Complex financial calculations or tax logic",
+   "Full production-ready UI/UX polish"
+  ],
+  "acceptance_criteria": [
+   "Application runs natively on iOS devices/simulator",
+   "All four basic arithmetic operations produce correct results",
+   "Calculation history/tape is visible and updates in real-time during use",
+   "UI is visually distinct from and more polished than default iOS calculator",
+   "Core math functionality is fully operational without critical bugs",
+   "Deliverable is a working coded application, not just a design prototype"
+  ],
+  "subtasks": [
+   {
+    "title": "Set up iOS project and basic calculator UI",
+    "detail": "Create new Xcode project with SwiftUI/UIKit, implement calculator button layout and display area with styling that exceeds default iOS calculator aesthetics"
+   },
+   {
+    "title": "Implement core arithmetic logic",
+    "detail": "Build calculation engine supporting add, subtract, multiply, divide with proper order of operations and decimal handling"
+   },
+   {
+    "title": "Develop visible calculation history/tape feature",
+    "detail": "Create scrollable tape display showing previous calculations and current operation, ensure real-time updates as user inputs numbers and operators"
+   },
+   {
+    "title": "Integrate UI components and test core functionality",
+    "detail": "Connect calculator buttons to arithmetic logic and history tape, perform testing to verify all operations work correctly and tape displays accurately"
+   },
+   {
+    "title": "Polish UI and prepare MVP delivery",
+    "detail": "Refine visual design for bookkeeping context, fix any critical bugs, package working application for delivery within weekly deadline"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "Platform is iOS Mobile",
+    "source": "Q: What platform do you primarily use for daily bookkeeping tasks? A: iOS Mobile"
+   },
+   {
+    "decision": "Must include visible calculation history/tape as primary differentiator",
+    "source": "Q: What specific bookkeeping pain points does your current phone calculator fail to address? A: Need visible calculation history/tape"
+   },
+   {
+    "decision": "Deliverable must be a working coded MVP with core math, not a clickable prototype",
+    "source": "Q: Does 'see something this week' mean a clickable design prototype or a working coded application? A: Working coded MVP with core math"
+   }
+  ],
+  "open_issues": [
+   "Specific visual style preferences beyond 'nicer than phone calculator'",
+   "Whether history/tape should persist between app sessions or reset each launch",
+   "Maximum number of history entries to display in tape view",
+   "Preferred color scheme or branding elements for bookkeeping context"
+  ]
+ },
+ "1fcbe94a1e08deb68e0e2827ad41a5f3f513d3b0": {
+  "text": "```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n<title>Bookkeeping Calculator</title>\n<style>\n*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:8px}\n.phone{background:#0f0f1a;border-radius:36px;width:100%;max-width:400px;height:520px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06)}\n.status-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 24px 2px;color:rgba(255,255,255,.5);font-size:11px;font-weight:600;letter-spacing:.5px}\n.header{padding:4px 24px 6px;display:flex;justify-content:space-between;align-items:center}\n.header h1{color:rgba(255,255,255,.85);font-size:15px;font-weight:700;letter-spacing:.3px}\n.clear-btn{background:rgba(255,255,255,.06);border:none;color:#ff6b6b;font-size:11px;font-weight:700;padding:5px 14px;border-radius:20px;cursor:pointer;transition:all .15s;letter-spacing:.5px}\n.clear-btn:hover{background:rgba(255,107,107,.15)}\n.clear-btn:active{transform:scale(.95)}\n.tape-container{flex:1;overflow-y:auto;padding:4px 24px 8px;display:flex;flex-direction:column;gap:1px;scrollbar-width:none;-ms-overflow-style:none}\n.tape-container::-webkit-scrollbar{display:none}\n.tape-line{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-family:'SF Mono','Courier New',monospace;padding:3px 0;animation:fadeIn .2s ease}\n@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}\n.tape-expr{color:rgba(255,255,255,.35);font-size:12px}\n.tape-result{color:rgba(255,255,255,.6);font-weight:600;font-size:13px}\n.tape-result.positive{color:#51cf66}\n.tape-result.negative{color:#ff6b6b}\n.tape-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);margin:4px 0}\n.tape-total{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-family:'SF Mono','Courier New',monospace;padding:6px 0;font-weight:700;color:#ffd43b}\n.display-area{padding:8px 24px 12px;text-align:right;min-height:80px;display:flex;flex-direction:column;justify-content:flex-end}\n.expression{color:rgba(255,255,255,.3);font-size:15px;font-family:'SF Mono','Courier New',monospace;min-height:20px;margin-bottom:4px;word-break:break-all;line-height:1.3}\n.current-value{color:#fff;font-size:40px;font-weight:200;font-family:'SF Mono','Courier New',monospace;line-height:1.1;letter-spacing:-1px;transition:font-size .15s}\n.current-value.small{font-size:28px}\n.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:6px 14px 20px}\n.btn{border:none;border-radius:14px;font-size:20px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;height:48px;transition:all .1s;user-select:none;position:relative;overflow:hidden}\n.btn::after{content:'';position:absolute;inset:0;background:rgba(255,255,255,0);transition:background .1s}\n.btn:active::after{background:rgba(255,255,255,.1)}\n.btn:active{transform:scale(.95)}\n.btn-num{background:rgba(255,255,255,.08);color:#fff}\n.btn-num:hover{background:rgba(255,255,255,.12)}\n.btn-op{background:rgba(255,159,67,.15);color:#ff9f43;font-size:22px;font-weight:600}\n.btn-op:hover{background:rgba(255,159,67,.25)}\n.btn-op.active{background:#ff9f43;color:#0f0f1a}\n.btn-func{background:rgba(255,255,255,.04);color:rgba(255,255,255,.7);font-size:16px;font-weight:600}\n.btn-func:hover{background:rgba(255,255,255,.08)}\n.btn-eq{background:linear-gradient(135deg,#51cf66,#37b24d);color:#fff;font-size:24px;font-weight:700;box-shadow:0 4px 15px rgba(81,207,102,.3)}\n.btn-eq:hover{box-shadow:0 4px 20px rgba(81,207,102,.4)}\n.btn-zero{grid-column:span 2}\n.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:rgba(255,255,255,.15);font-size:12px;gap:6px;padding:20px}\n.empty-state svg{opacity:.3}\n</style>\n</head>\n<body>\n<div class=\"phone\">\n<div class=\"status-bar\"><span>9:41</span><span>⚡ 100%</span></div>\n<div class=\"header\">\n<h1>📒 Bookkeeping</h1>\n<button class=\"clear-btn\" onclick=\"clearAll()\">CLEAR ALL</button>\n</div>\n<div class=\"tape-container\" id=\"tape\"></div>\n<div class=\"display-area\">\n<div class=\"expression\" id=\"expression\"></div>\n<div class=\"current-value\" id=\"display\">0</div>\n</div>\n<div class=\"buttons\">\n<button class=\"btn btn-func\" onclick=\"inputClear()\">AC</button>\n<button class=\"btn btn-func\" onclick=\"toggleSign()\">+/−</button>\n<button class=\"btn btn-func\" onclick=\"inputPercent()\">%</button>\n<button class=\"btn btn-op\" id=\"op-div\" onclick=\"inputOp('÷')\">÷</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('7')\">7</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('8')\">8</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('9')\">9</button>\n<button class=\"btn btn-op\" id=\"op-mul\" onclick=\"inputOp('×')\">×</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('4')\">4</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('5')\">5</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('6')\">6</button>\n<button class=\"btn btn-op\" id=\"op-sub\" onclick=\"inputOp('−')\">−</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('1')\">1</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('2')\">2</button>\n<button class=\"btn btn-num\" onclick=\"inputNum('3')\">3</button>\n<button class=\"btn btn-op\" id=\"op-add\" onclick=\"inputOp('+')\">+</button>\n<button class=\"btn btn-num btn-zero\" onclick=\"inputNum('0')\">0</button>\n<button class=\"btn btn-num\" onclick=\"inputDot()\">.</button>\n<button class=\"btn btn-eq\" onclick=\"calculate()\">=</button>\n</div>\n</div>\n\n<script>\nlet currentInput='0';\nlet previousValue=null;\nlet operator=null;\nlet shouldResetInput=false;\nlet history=[];\nlet runningTotal=0;\nlet expressionStr='';\n\nconst displayEl=document.getElementById('display');\nconst exprEl=document.getElementById('expression');\nconst tapeEl=document.getElementById('tape');\n\nfunction formatNumber(n){\nif(n==='Error')return'Error';\nlet num=typeof n==='string'?parseFloat(n):n;\nif(isNaN(num))return'0';\nlet s=num.toFixed(2);\nlet parts=s.split('.');\nparts[0]=parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,',');\nreturn parts.join('.');\n}\n\nfunction updateDisplay(){\nlet val=currentInput;\nif(val.length>12){\ndisplayEl.classList.add('small');\n}else{\ndisplayEl.classList.remove('small');\n}\nif(val==='Error'){\ndisplayEl.textContent='Error';\n}else if(val.includes('.')&&val.endsWith('0')&&!shouldResetInput){\ndisplayEl.textContent=val;\n}else{\nlet n=parseFloat(val);\nif(!isNaN(n)&&shouldResetInput){\ndisplayEl.textContent=formatNumber(n);\n}else{\ndisplayEl.textContent=val;\n}\n}\nexprEl.textContent=expressionStr;\nhighlightOp();\n}\n\nfunction highlightOp(){\ndocument.querySelectorAll('.btn-op').forEach(b=>b.classList.remove('active'));\nif(operator&&shouldResetInput){\nlet map={'+':'op-add','−':'op-sub','×':'op-mul','÷':'op-div'};\nlet el=document.getElementById(map[operator]);\nif(el)el.classList.add('active');\n}\n}\n\nfunction inputNum(n){\nif(currentInput==='Error')currentInput='0';\nif(shouldResetInput){\ncurrentInput=n;\nshouldResetInput=false;\n}else{\nif(currentInput==='0'&&n!=='0'){\ncurrentInput=n;\n}else if(currentInput==='0'&&n==='0'){\n}else{\nif(currentInput.replace(/[^0-9]/g,'').length>=12)return;\ncurrentInput+=n;\n}\n}\nupdateDisplay();\n}\n\nfunction inputDot(){\nif(shouldResetInput){\ncurrentInput='0.';\nshouldResetInput=false;\n}else if(!currentInput.includes('.')){\ncurrentInput+='.';\n}\nupdateDisplay();\n}\n\nfunction inputOp(op){\nif(currentInput==='Error')return;\nlet cur=parseFloat(currentInput);\nif(previousValue!==null&&!shouldResetInput){\nlet result=compute(previousValue,cur,operator);\nif(result==='Error'){\ncurrentInput='Error';\npreviousValue=null;\noperator=null;\nexpressionStr='';\nupdateDisplay();\nreturn;\n}\ncurrentInput=String(result);\npreviousValue=result;\nexpressionStr=formatNumber(result)+' '+op;\n}else{\npreviousValue=cur;\nexpressionStr=formatNumber(cur)+' '+op;\n}\noperator=op;\nshouldResetInput=true;\nupdateDisplay();\n}\n\nfunction compute(a,b,op){\nswitch(op){\ncase'+':return a+b;\ncase'−':return a-b;\ncase'×':return a*b;\ncase'÷':return b===0?'Error':a/b;\ndefault:return b;\n}\n}\n\nfunction calculate(){\nif(currentInput==='Error')return;\nif(previousValue===null||operator===null)return;\nlet cur=parseFloat(currentInput);\nlet result=compute(previousValue,cur,operator);\nlet fullExpr=formatNumber(previousValue)+' '+operator+' '+formatNumber(cur);\nif(result==='Error'){\ncurrentInput='Error';\nexpressionStr=fullExpr+' =';\npreviousValue=null;\noperator=null;\nshouldResetInput=true;\nupdateDisplay();\nreturn;\n}\nlet rounded=Math.round(result*100)/100;\naddTapeEntry(fullExpr,rounded);\nrunningTotal+=rounded;\nexpressionStr=fullExpr+' =';\ncurrentInput=String(rounded);\npreviousValue=null;\noperator=null;\nshouldResetInput=true;\nupdateDisplay();\nrenderTape();\n}\n\nfunction addTapeEntry(expr,result){\nhistory.push({expr,result});\nif(history.length>50)history.shift();\n}\n\nfunction renderTape(){\ntapeEl.innerHTML='';\nif(history.length===0){\ntapeEl.innerHTML='<div class=\"empty-state\"><svg width=\"32\" height=\"32\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"4\" y=\"2\" width=\"16\" height=\"20\" rx=\"2\"/><line x1=\"8\" y1=\"7\" x2=\"16\" y2=\"7\"/><line x1=\"8\" y1=\"11\" x2=\"16\" y2=\"11\"/><line x1=\"8\" y1=\"15\" x2=\"12\" y2=\"15\"/></svg><span>Your calculation tape will appear here</span></div>';\nreturn;\n}\nhistory.forEach((item,i)=>{\nlet line=document.createElement('div');\nline.className='tape-line';\nlet sign=item.result<0?'negative':'positive';\nlet prefix=item.result>=0?'+':'';\nline.innerHTML=`<span class=\"tape-expr\">${item.expr}</span><span class=\"tape-result ${sign}\">${prefix}${formatNumber(item.result)}</span>`;\ntapeEl.appendChild(line);\n});\nlet divider=document.createElement('div');\ndivider.className='tape-divider';\ntapeEl.appendChild(divider);\nlet totalLine=document.createElement('div');\ntotalLine.className='tape-total';\nlet tSign=runningTotal<0?'−':'';\ntotalLine.innerHTML=`<span>Total (${history.length} entries)</span><span>${tSign}${formatNumber(Math.abs(runningTotal))}</span>`;\ntapeEl.appendChild(totalLine);\ntapeEl.scrollTop=tapeEl.scrollHeight;\n}\n\nfunction inputClear(){\nif(currentInput!=='0'&&currentInput!=='Error'&&!shouldResetInput){\ncurrentInput='0';\n}else{\ncurrentInput='0';\npreviousValue=null;\noperator=null;\nexpressionStr='';\nshouldResetInput=false;\n}\nupdateDisplay();\n}\n\nfunction clearAll(){\ncurrentInput='0';\npreviousValue=null;\noperator=null;\nexpressionStr='';\nshouldResetInput=false;\nhistory=[];\nrunningTotal=0;\nupdateDisplay();\nrenderTape();\n}\n\nfunction toggleSign(){\nif(currentInput==='Error'||currentInput==='0')return;\nif(currentInput.startsWith('-')){\ncurrentInput=currentInput.slice(1);\n}else{\ncurrentInput='-'+currentInput;\n}\nupdateDisplay();\n}\n\nfunction inputPercent(){\nif(currentInput==='Error')return;\nlet val=parseFloat(currentInput)/100;\nval=Math.round(val*10000)/10000;\ncurrentInput=String(val);\nshouldResetInput=true;\nupdateDisplay();\n}\n\n// Keyboard support\ndocument.addEventListener('keydown',e=>{\nif(e.key>='0'&&e.key<='9')inputNum(e.key);\nelse if(e.key==='.')inputDot();\nelse if(e.key==='+')inputOp('+');\nelse if(e.key==='-')inputOp('−');\nelse if(e.key==='*')inputOp('×');\nelse if(e.key==='/'){e.preventDefault();inputOp('÷');}\nelse if(e.key==='Enter'||e.key==='=')calculate();\nelse if(e.key==='Escape')inputClear();\nelse if(e.key==='Backspace'){\nif(!shouldResetInput&&currentInput.length>1){\ncurrentInput=currentInput.slice(0,-1);\n}else{\ncurrentInput='0';\n}\nupdateDisplay();\n}\nelse if(e.key==='%')inputPercent();\n});\n\nrenderTape();\nupdateDisplay();\n</script>\n</body>\n</html>\n```"
+ },
+ "66c1aeef3c6367003eeaaba5ffab171339174abe": {
+  "title": "Tech Talk Sign-Up Page",
+  "understanding": "Create a sign-up page for next month's tech talk that automatically closes registrations when capacity is reached and provides an attendee list view.",
+  "deadline": "2026-11-24",
+  "subtasks": [
+   {
+    "title": "Define requirements & capacity",
+    "detail": "Confirm event date, seat limit, required fields, and whether the attendee list is public or admin-only."
+   },
+   {
+    "title": "Design & build sign-up form",
+    "detail": "Implement front-end form with validation and real-time availability feedback."
+   },
+   {
+    "title": "Implement backend & auto-close logic",
+    "detail": "Set up database/storage, registration endpoint, and automatic closure when capacity is hit."
+   },
+   {
+    "title": "Build attendee list view",
+    "detail": "Create secure interface to view/export attendees based on access requirements."
+   },
+   {
+    "title": "Test & deploy",
+    "detail": "Verify auto-close behavior, data integrity, and deploy before the event promotion starts."
+   }
+  ],
+  "known": [
+   "Event is next month (November 2026)",
+   "Seats are limited",
+   "Sign-ups must auto-close at capacity",
+   "Attendee list visibility is needed"
+  ],
+  "questions": [
+   {
+    "question": "What is the exact seat capacity and event date?",
+    "why": "Auto-close logic and any countdown/timing depend on these values; without them we cannot implement the core constraint.",
+    "options": [
+     "50 seats",
+     "100 seats",
+     "200 seats"
+    ]
+   },
+   {
+    "question": "Who should be able to see the attendee list?",
+    "why": "Privacy/GDPR implications and authentication requirements differ drastically between public, registered-user-only, and admin-only views.",
+    "options": [
+     "Admins only",
+     "Registered attendees only",
+     "Publicly visible"
+    ]
+   },
+   {
+    "question": "What information must be collected from registrants?",
+    "why": "Determines form fields, validation, storage schema, and whether we need consent handling for privacy compliance.",
+    "options": [
+     "Name + email only",
+     "Name + email + company/role",
+     "Custom fields (please specify)"
+    ]
+   }
+  ],
+  "needs_meeting": false,
+  "meeting_reason": ""
+ },
+ "472df9840af9ff2d658be4c6af389f2d69808393": {
+  "goal": "Create an interactive design prototype for an iOS native bookkeeping calculator that improves upon standard phone calculators by including dedicated Tax/VAT percentage buttons, deliverable by the end of this week.",
+  "in_scope": [
+   "Interactive design prototype (clickable, non-coded)",
+   "iOS native platform targeting",
+   "Dedicated Tax/VAT percentage button functionality in UI",
+   "Everyday bookkeeping use case focus",
+   "UX improvements over standard phone calculator"
+  ],
+  "out_of_scope": [
+   "Functional coded application",
+   "Android or web platform support",
+   "Backend integration or data persistence",
+   "Advanced accounting features beyond basic bookkeeping and VAT",
+   "Final production-ready design assets"
+  ],
+  "acceptance_criteria": [
+   "Prototype is interactive and clickable on iOS device or simulator",
+   "Dedicated Tax/VAT percentage buttons are visible and demonstrate intended interaction flow",
+   "UI clearly differentiates from standard iOS calculator app",
+   "Prototype covers core everyday bookkeeping workflows",
+   "Deliverable is ready for stakeholder review by end of current week"
+  ],
+  "subtasks": [
+   {
+    "title": "Audit standard iOS calculator UX gaps for bookkeeping",
+    "detail": "Analyze the default iOS calculator to identify specific friction points for bookkeeping tasks, focusing on where Tax/VAT calculations interrupt workflow."
+   },
+   {
+    "title": "Design Tax/VAT button interaction model",
+    "detail": "Define how VAT percentage buttons behave (e.g., preset rates vs custom input), visual placement, and feedback states within the iOS native design language."
+   },
+   {
+    "title": "Create low-fidelity wireframes for core bookkeeping flows",
+    "detail": "Map out primary screens and navigation for adding amounts, applying tax, and viewing results, ensuring improved UX over standard calculator."
+   },
+   {
+    "title": "Build high-fidelity interactive prototype",
+    "detail": "Develop a clickable iOS-native-styled prototype incorporating finalized VAT button designs and core bookkeeping interactions."
+   },
+   {
+    "title": "Conduct internal usability validation",
+    "detail": "Test the interactive prototype against acceptance criteria, verifying VAT button clarity and overall UX improvement before stakeholder delivery."
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "Include dedicated Tax/VAT percentage buttons as the primary UX enhancement",
+    "source": "Q: What specific bookkeeping pain points does your current phone calculator fail to address? A: Tax/VAT percentage buttons"
+   },
+   {
+    "decision": "Target iOS Native platform for the prototype",
+    "source": "Q: What platform should this prototype target for this week's demo? A: iOS Native"
+   },
+   {
+    "decision": "Deliver an interactive design prototype rather than a coded app",
+    "source": "Q: Does 'see something this week' mean a clickable design prototype or a fully functional coded app? A: Interactive design prototype"
+   }
+  ],
+  "open_issues": [
+   "Which specific VAT/Tax percentage rates should be included as presets in the prototype?",
+   "What additional bookkeeping-specific features (beyond VAT) should be represented to justify 'nicer than phone calculator' claim?",
+   "Should the prototype include any visual indication of calculation history or tape for bookkeeping verification?",
+   "What format/tool is expected for delivering the interactive prototype (Figma, ProtoPie, etc.)?"
+  ]
+ },
+ "e75c2237ff7b569d479b25fa89c071ab235df525": {
+  "text": "```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n<title>Bookkeeping Calculator</title>\n<style>\n*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}\nbody{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}\n.phone{width:100%;max-width:400px;height:520px;background:#000;border-radius:36px;overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.6),inset 0 0 0 2px #333}\n.status-bar{height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 24px;color:#fff;font-size:11px;font-weight:600;flex-shrink:0}\n.tape{flex:1;overflow-y:auto;padding:4px 20px;display:flex;flex-direction:column;justify-content:flex-end;min-height:0;scrollbar-width:none}\n.tape::-webkit-scrollbar{display:none}\n.tape-line{color:#666;font-size:13px;text-align:right;padding:1px 0;font-variant-numeric:tabular-nums}\n.tape-line.vat-add{color:#bf5af2}\n.tape-line.vat-sub{color:#ff9f0a}\n.tape-line.op{color:#888}\n.display{padding:0 20px 6px;flex-shrink:0}\n.expression{color:#888;font-size:15px;text-align:right;height:20px;line-height:20px;font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}\n.main-display{color:#fff;font-size:44px;font-weight:300;text-align:right;line-height:1.15;font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;letter-spacing:-.5px}\n.controls{padding:4px 10px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;flex-shrink:0}\n.btn{border:none;border-radius:50%;aspect-ratio:1/1;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:filter .1s,opacity .1s;font-family:inherit;outline:none}\n.btn:active{filter:brightness(1.4);transition:none}\n.btn-num{background:#333;color:#fff}\n.btn-zero{grid-column:span 2;border-radius:28px;aspect-ratio:auto;justify-content:flex-start;padding-left:24px}\n.btn-op{background:#ff9f0a;color:#fff;font-size:24px;font-weight:500}\n.btn-op.active{background:#fff;color:#ff9f0a}\n.btn-fn{background:#a5a5a5;color:#000;font-size:17px;font-weight:500}\n.btn-vat{background:#bf5af2;color:#fff;font-size:12px;font-weight:700;letter-spacing:.2px}\n.btn-vat.active{background:#d98aff;color:#000}\n.btn-accent{background:#30d158;color:#fff;font-size:13px;font-weight:700}\n.sep{grid-column:span 4;height:1px;background:#222;margin:1px 0}\n.home-ind{width:100px;height:4px;background:#555;border-radius:2px;margin:4px auto 6px;flex-shrink:0}\n</style>\n</head>\n<body>\n<div class=\"phone\">\n<div class=\"status-bar\"><span>9:41</span><span>⚡ 100%</span></div>\n<div class=\"tape\" id=\"tape\"></div>\n<div class=\"display\">\n<div class=\"expression\" id=\"expr\"></div>\n<div class=\"main-display\" id=\"disp\">0</div>\n</div>\n<div class=\"controls\">\n<button class=\"btn btn-fn\" onclick=\"cClear()\">AC</button>\n<button class=\"btn btn-fn\" onclick=\"cSign()\">+/−</button>\n<button class=\"btn btn-vat\" id=\"bVatAdd\" onclick=\"cVat('add')\">+VAT</button>\n<button class=\"btn btn-op\" data-op=\"/\" onclick=\"cOp('/')\">÷</button>\n\n<button class=\"btn btn-num\" onclick=\"cNum('7')\">7</button>\n<button class=\"btn btn-num\" onclick=\"cNum('8')\">8</button>\n<button class=\"btn btn-num\" onclick=\"cNum('9')\">9</button>\n<button class=\"btn btn-op\" data-op=\"*\" onclick=\"cOp('*')\">×</button>\n\n<button class=\"btn btn-num\" onclick=\"cNum('4')\">4</button>\n<button class=\"btn btn-num\" onclick=\"cNum('5')\">5</button>\n<button class=\"btn btn-num\" onclick=\"cNum('6')\">6</button>\n<button class=\"btn btn-op\" data-op=\"-\" onclick=\"cOp('-')\">−</button>\n\n<button class=\"btn btn-num\" onclick=\"cNum('1')\">1</button>\n<button class=\"btn btn-num\" onclick=\"cNum('2')\">2</button>\n<button class=\"btn btn-num\" onclick=\"cNum('3')\">3</button>\n<button class=\"btn btn-op\" data-op=\"+\" onclick=\"cOp('+')\">+</button>\n\n<button class=\"btn btn-num btn-zero\" onclick=\"cNum('0')\">0</button>\n<button class=\"btn btn-num\" onclick=\"cDot()\">.</button>\n<button class=\"btn btn-accent\" onclick=\"cEq()\">=</button>\n\n<div class=\"sep\"></div>\n<button class=\"btn btn-vat\" style=\"font-size:11px\" onclick=\"cRate(5)\">5%</button>\n<button class=\"btn btn-vat\" style=\"font-size:11px\" onclick=\"cRate(10)\">10%</button>\n<button class=\"btn btn-vat active\" style=\"font-size:11px\" id=\"bR20\" onclick=\"cRate(20)\">20%</button>\n<button class=\"btn btn-vat\" style=\"font-size:10px\" onclick=\"cVat('sub')\">−VAT</button>\n</div>\n<div class=\"home-ind\"></div>\n</div>\n<script>\nlet cur='0',prev=null,op=null,fresh=true,vatR=20,hist=[];\nconst $d=document.getElementById('disp'),$e=document.getElementById('expr'),$t=document.getElementById('tape');\n\nfunction fmt(n){\n  if(n==='Error')return'Error';\n  let s=String(n);\n  if(s.includes('e'))return parseFloat(n).toExponential(4);\n  let p=s.split('.'),i=p[0],d=p[1];\n  let neg=i.startsWith('-');if(neg)i=i.slice(1);\n  i=i.replace(/\\B(?=(\\d{3})+(?!\\d))/g,',');\n  return(neg?'-':'')+i+(d!==undefined?'.'+d:'');\n}\n\nfunction upd(){\n  let v=cur;\n  if(v!=='Error'&&!v.endsWith('.')){\n    let n=parseFloat(v);\n    if(!isNaN(n)&&isFinite(n))v=fmt(n);\n  }\n  $d.textContent=v;\n  $d.style.fontSize=v.length>11?'30px':v.length>8?'36px':'44px';\n  if(op){\n    const sym={'+':'+','-':'−','*':'×','/':'÷'};\n    $e.textContent=(prev!==null?fmt(prev):'')+' '+sym[op];\n  }else if(!fresh&&hist.length){\n    $e.textContent=hist[hist.length-1];\n  }else{\n    $e.textContent='';\n  }\n  document.querySelectorAll('.btn-op').forEach(b=>{\n    b.classList.toggle('active',op&&b.dataset.op===op&&fresh);\n  });\n}\n\nfunction tape(txt,cls){\n  hist.push(txt);\n  const d=document.createElement('div');\n  d.className='tape-line'+(cls?' '+cls:'');\n  d.textContent=txt;\n  $t.appendChild(d);\n  $t.scrollTop=$t.scrollHeight;\n}\n\nfunction calc(a,o,b){\n  a=parseFloat(a);b=parseFloat(b);\n  if(o==='+')return a+b;if(o==='-')return a-b;\n  if(o==='*')return a*b;if(o==='/')return b===0?'Error':a/b;\n  return b;\n}\n\nfunction cNum(n){\n  if(cur==='Error')cur='0';\n  if(fresh){cur=n;fresh=false;}\n  else{if(cur==='0'&&n!=='0')cur=n;else if(cur!=='0'||n!=='0'){if(cur.replace(/[^0-9]/g,'').length>=15)return;cur+=n;}}\n  upd();\n}\n\nfunction cDot(){\n  if(fresh){cur='0.';fresh=false;upd();return;}\n  if(!cur.includes('.'))cur+='.';\n  upd();\n}\n\nfunction cOp(o){\n  if(cur==='Error')return;\n  if(prev!==null&&!fresh){\n    let r=calc(prev,op,cur);\n    tape(fmt(prev)+' '+{' + ':'+','-':'−','*':'×','/':'÷'}[o]+ ' '+fmt(parseFloat(cur))+' = '+fmt(r),'op');\n    prev=r;cur=String(r);\n  }else{\n    prev=parseFloat(cur);\n  }\n  op=o;fresh=true;upd();\n}\n\nfunction cEq(){\n  if(cur==='Error')return;\n  if(prev!==null&&op){\n    let r=calc(prev,op,cur);\n    const sym={'+':'+','-':'−','*':'×','/':'÷'};\n    tape(fmt(prev)+' '+sym[op]+' '+fmt(parseFloat(cur))+' = '+fmt(r),'op');\n    cur=String(r);prev=null;op=null;fresh=true;upd();\n  }\n}\n\nfunction cClear(){\n  cur='0';prev=null;op=null;fresh=true;\n  $t.innerHTML='';hist=[];upd();\n}\n\nfunction cSign(){\n  if(cur==='Error'||cur==='0')return;\n  cur=cur.startsWith('-')?cur.slice(1):'-'+cur;\n  fresh=true;upd();\n}\n\nfunction cRate(r){\n  vatR=r;\n  document.querySelectorAll('.controls .sep~.btn-vat:not(:last-child)').forEach(b=>b.classList.remove('active'));\n  event.target.classList.add('active');\n  tape('VAT rate → '+r+'%','');\n}\n\nfunction cVat(mode){\n  if(cur==='Error')return;\n  let n=parseFloat(cur);if(isNaN(n))return;\n  let tax,res;\n  if(mode==='add'){\n    tax=n*(vatR/100);res=n+tax;\n    tape(fmt(n)+' + '+vatR+'% VAT ('+fmt(tax)+') = '+fmt(res),'vat-add');\n  }else{\n    tax=n-(n/(1+vatR/100));res=n-tax;\n    tape(fmt(n)+' − '+vatR+'% VAT ('+fmt(tax)+') = '+fmt(res),'vat-sub');\n  }\n  cur=String(res);prev=null;op=null;fresh=true;upd();\n}\n\nupd();\n</script>\n</body>\n</html>\n```"
+ }
+}
