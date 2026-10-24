@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Egg Timer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,system-ui,sans-serif;background:#faf9f6;color:#2d2a26;display:flex;justify-content:center;min-height:100vh}
+.app{width:100%;max-width:400px;padding:24px 16px;display:flex;flex-direction:column;align-items:center;height:520px}
+h1{font-size:1.4rem;font-weight:700;margin-bottom:24px}
+.presets{display:flex;gap:10px;width:100%;margin-bottom:32px}
+.preset-btn{flex:1;padding:14px 4px;border:2px solid #e0ddd8;border-radius:12px;background:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .15s}
+.preset-btn.active{border-color:#e67e22;background:#fef5ec;color:#c0571f}
+.timer-display{font-size:4.5rem;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-2px;margin-bottom:32px;line-height:1}
+.controls{display:flex;gap:12px;width:100%}
+.btn{flex:1;padding:16px;border:none;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer}
+.btn-start{background:#e67e22;color:#fff}
+.btn-start:disabled{background:#ccc;cursor:default}
+.btn-stop{background:#eee;color:#555}
+details{margin-top:auto;width:100%;font-size:.75rem;color:#888}
+summary{cursor:pointer;padding:8px 0}
+.map{padding:8px 0;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🥚 Egg Timer</h1>
+<div class="presets">
+<button class="preset-btn" data-preset="soft" onclick="selectPreset('soft')">Soft<br><small>4 min</small></button>
+<button class="preset-btn" data-preset="medium" onclick="selectPreset('medium')">Medium<br><small>7 min</small></button>
+<button class="preset-btn" data-preset="hard" onclick="selectPreset('hard')">Hard<br><small>10 min</small></button>
+</div>
+<div class="timer-display" id="display">--:--</div>
+<div class="controls">
+<button class="btn btn-start" id="startBtn" onclick="startTimer()" disabled>Start</button>
+<button class="btn btn-stop" onclick="stopTimer()">Stop</button>
+</div>
+<details>
+<summary>Built from your answers</summary>
+<div class="map">
+• Mobile web layout — Q1 Requester<br>
+• Presets only, no custom input — Q2 Requester<br>
+• Audible alarm on completion — Q3 Requester<br>
+• Soft / Medium / Hard presets — Q4 Requester<br>
+• Background timer (Web Worker) — Q5 Requester<br>
+• Countdown display only — Q6 Requester
+</div>
+</details>
+</div>
+<script>
+const PRESETS={soft:4*60,medium:7*60,hard:10*60};
+let selected=null,endTime=null,worker=null,rafId=null;
+const display=document.getElementById('display'),startBtn=document.getElementById('startBtn');
+
+// Web Worker for background execution (Q5)
+const workerCode=`self.onmessage=function(e){if(e.data==='tick'){setInterval(()=>self.postMessage('tick'),1000)}}`;
+const blob=new Blob([workerCode],{type:'application/javascript'});
+const workerUrl=URL.createObjectURL(blob);
+
+function selectPreset(name){
+stopTimer();
+selected=name;
+document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));
+formatDisplay(PRESETS[name]);
+startBtn.disabled=false;
+}
+
+function formatDisplay(sec){
+const m=Math.floor(sec/60),s=sec%60;
+display.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+function startTimer(){
+if(!selected)return;
+stopTimer();
+endTime=Date.now()+PRESETS[selected]*1000;
+worker=new Worker(workerUrl);
+worker.onmessage=tick;
+worker.postMessage('tick');
+tick();
+}
+
+function tick(){
+const left=Math.max(0,Math.round((endTime-Date.now())/1000));
+formatDisplay(left);
+if(left<=0){alarm();stopTimer();}
+}
+
+function stopTimer(){
+if(worker){worker.terminate();worker=null;}
+if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+if(!selected)display.textContent='--:--';
+else if(endTime){const l=Math.max(0,Math.round((endTime-Date.now())/1000));formatDisplay(l);}
+}
+
+function alarm(){
+// Audible alarm using Web Audio API (Q3)
+try{
+const ctx=new(window.AudioContext||window.webkitAudioContext)();
+for(let i=0;i<5;i++){
+const osc=ctx.createOscillator();const gain=ctx.createGain();
+osc.connect(gain);gain.connect(ctx.destination);
+osc.frequency.value=880;osc.type='square';
+gain.gain.value=0.3;
+const t=ctx.currentTime+i*0.3;
+osc.start(t);osc.stop(t+0.15);
+}
+}catch(e){}
+navigator.vibrate&&navigator.vibrate([200,100,200,100,200]);
+display.textContent='Done!';
+setTimeout(()=>{if(selected)formatDisplay(PRESETS[selected]);},3000);
+}
+</script>
+</body>
+</html>

@@ -23,10 +23,12 @@ import base64
 import hashlib
 import html as htmllib
 import json
+import os
 import re
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, datetime
 from pathlib import Path
@@ -44,6 +46,12 @@ HARNESS_URL = "http://127.0.0.1:8765"
 BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"  # International site; for mainland China keys use https://dashscope.aliyuncs.com/compatible-mode/v1
 KEY_FILE = Path(__file__).parent / "apikey.txt"
 CACHE_FILE = Path(__file__).parent / "demo_cache.json"
+RESON8_URL = "https://api.reson8.dev/v1/speech-to-text/prerecorded"  # Meeting transcription with speaker diarization
+RESON8_KEY_FILE = Path(__file__).parent / "reson8key.txt"  # Or set RESON8_API_KEY
+SAMPLE_MEETING = Path(__file__).parent / "samples" / "meeting_sample.wav"
+AUDIO_TYPES = ["wav", "mp3", "m4a", "ogg", "flac", "webm", "mp4"]
+REWORK_H = 2  # Estimate: hours of rework when a requirement issue only surfaces after building
+INTERRUPT_H = 0.25  # Estimate: hours lost per question that interrupts a stakeholder
 
 # Demo scenarios: each maps to a project, with preset worker / knowledge-base questions (click a button on stage, no live typing)
 SCENARIOS = {
@@ -242,6 +250,95 @@ ALL_SCHEMA = {
         "projects": {"type": "array", "items": {"type": "string"}, "description": "Projects the answer involves; must exactly match the project titles in the documents"},
     },
     "required": ["found", "answer", "sources", "projects"],
+}
+
+MINUTES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "What the meeting was about and its outcome, one sentence, max 20 words"},
+        "speakers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"speaker": {"type": "string", "description": "Exactly as in the transcript, e.g. 'Speaker 1'"},
+                               "name": {"type": "string", "description": "The stakeholder's name exactly as in the stakeholder list, or 'Unknown'"}},
+                "required": ["speaker", "name"],
+            },
+        },
+        "decisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"decision": {"type": "string", "description": "Max 12 words"},
+                               "by": {"type": "string", "description": "Stakeholder who made or confirmed it"}},
+                "required": ["decision", "by"],
+            },
+            "description": "Only what was explicitly agreed in the meeting",
+        },
+        "wishes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"who": {"type": "string"}, "wish": {"type": "string", "description": "Max 12 words"}},
+                "required": ["who", "wish"],
+            },
+            "description": "New requirements someone asked for but nobody settled yet",
+        },
+        "action_items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"owner": {"type": "string"}, "item": {"type": "string", "description": "Max 10 words"},
+                               "due": {"type": "string", "description": "As said in the meeting, e.g. 'Friday'; empty if none"}},
+                "required": ["owner", "item", "due"],
+            },
+        },
+        "open_questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"question": {"type": "string", "description": "Max 12 words"},
+                               "to": {"type": "string", "description": "Stakeholder who owns the answer"}},
+                "required": ["question", "to"],
+            },
+            "description": "Raised in the meeting but left unanswered",
+        },
+    },
+    "required": ["summary", "speakers", "decisions", "wishes", "action_items", "open_questions"],
+}
+
+CHANGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headline": {"type": "string", "description": "What changed for the builders, one sentence, max 15 words"},
+        "changes": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "what": {"type": "string", "description": "Max 6 words"},
+                    "before": {"type": "string", "description": "Max 10 words; '—' if it is new"},
+                    "after": {"type": "string", "description": "Max 10 words; '—' if it was dropped"},
+                    "because": {"type": "string", "description": "Just the reference and who that caused it, e.g. 'W3 Ben', 'M1 Anna'"},
+                },
+                "required": ["what", "before", "after", "because"],
+            },
+            "description": "Real changes to scope, acceptance criteria, subtasks or decisions; never rewordings",
+        },
+        "notify": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"who": {"type": "string", "description": "Exactly as in the stakeholder list"},
+                               "why": {"type": "string", "description": "Max 10 words"}},
+                "required": ["who", "why"],
+            },
+            "description": "Stakeholders the change affects and who didn't cause it themselves",
+        },
+        "rework": {"type": "string", "enum": ["none", "small", "large"], "description": "How much already-built work the change undoes"},
+    },
+    "required": ["headline", "changes", "notify", "rework"],
 }
 
 # ---------- AI calls: pi harness (direct Qwen API as fallback) + record / replay ----------
@@ -462,11 +559,11 @@ def is_wish(h: dict) -> bool:
 
 
 def is_question(h: dict) -> bool:
-    return not h.get("kind")  # Wishes and owner decisions carry a kind
+    return not h.get("kind")  # Wishes, owner decisions and meeting notes carry a kind
 
 
 def qa_md(qa: list) -> str:
-    lines, nq, nw, nd = [], 0, 0, 0
+    lines, nq, nw, nd, nm = [], 0, 0, 0, 0
     for h in qa:
         if is_wish(h):
             nw += 1
@@ -474,6 +571,9 @@ def qa_md(qa: list) -> str:
         elif h.get("kind") == "decision":
             nd += 1
             lines.append(f"D{nd} (round {h.get('round', 1)}): owner {h['by']} settled {h['q']} ({h['sides']}): {h['a']}")
+        elif h.get("kind") == "meeting":
+            nm += 1
+            lines.append(f"M{nm} (round {h.get('round', 1)}): {h['q']}, {h['by']}: {h['a']}")
         else:
             nq += 1
             lines.append(f"Q{nq} (round {h.get('round', 1)}): {h['q']}\nA ({h['by']}): {h['a']}")
@@ -485,6 +585,7 @@ def clarify(task: str, analysis: dict, people: list, qa: list, round_no: int) ->
         "You are an experienced tech lead grilling the stakeholders, round after round, until the request is fully explained. "
         "Address each question to the stakeholder who owns that decision. "
         "Stakeholders may also state wishes unprompted (W lines): treat each as that person's requirement, ask the follow-ups it raises, "
+        "M lines come from meeting minutes: meeting decisions count as answers, and questions left open in a meeting still need asking. "
         "If wishes or answers from different stakeholders contradict each other, don't ask about it as a question: put it in conflicts "
         "with who wants what and 2-3 resolutions, best compromise first, for the owner to pick. A conflict goes only into conflicts, never also into questions. "
         "Never re-raise a conflict already decided (D lines). "
@@ -502,7 +603,8 @@ def clarify(task: str, analysis: dict, people: list, qa: list, round_no: int) ->
 def write_brief(task: str, analysis: dict, people: list, qa: list, remaining: list) -> dict:
     system = (
         "Based on the task description and the clarification Q&A, write a task brief the worker can start on right away. "
-        "Every decision must trace back to an answer, a stakeholder's wish (W lines) or an owner's conflict decision (D lines), and who gave it; anything without a basis can only go into open issues. " + LANG_RULE
+        "Every decision must trace back to an answer, a stakeholder's wish (W lines), an owner's conflict decision (D lines) or a meeting decision (M lines), "
+        "and who gave it; anything without a basis, including questions a meeting left open, can only go into open issues. " + LANG_RULE
     )
     content = (
         f"Task description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\nUnderstanding after clarification: {analysis['understanding']}\n\n"
@@ -520,9 +622,9 @@ def make_demo(task: str, brief: dict, qa: list, feedback: str = "") -> tuple:
     system = (
         "You are a product prototype designer. Based on the stakeholders' answers in the Q&A and the task brief, build an interactive single-file HTML prototype "
         "so the requester can confirm at a glance that \"this is roughly what it will look like\". "
-        "Every answer, stakeholder wish (W lines) and owner decision (D lines) that changes what the user sees or does must be visible and working in the prototype (e.g. if they chose CSV export, there is a working Export CSV button); "
+        "Every answer, stakeholder wish (W lines), owner decision (D lines) and meeting decision (M lines) that changes what the user sees or does must be visible and working in the prototype (e.g. if they chose CSV export, there is a working Export CSV button); "
         "earlier change requests in the Q&A still apply. Don't add features nobody asked for or answered. "
-        "At the bottom, add a small collapsed <details> section titled \"Built from your answers\" mapping each visible feature to the answer, wish or decision (Q/W/D number and who) it came from. "
+        "At the bottom, add a small collapsed <details> section titled \"Built from your answers\" mapping each visible feature to the answer, wish or decision (Q/W/D/M number and who) it came from. "
         "Requirements: implement only the core features within the brief's scope, and buttons and inputs must actually work; use fake data where data is needed; "
         "don't access the network or reference any external files, fonts or CDNs; inline all CSS and JS; "
         "keep the style clean and modern, with UI text in the same language as the task description; keep the overall height within 520px and the width responsive. "
@@ -574,6 +676,121 @@ def answer_all(question: str) -> dict:
     return call_tool(system, content, "kb_all_answer", ALL_SCHEMA)
 
 
+def reson8_key() -> str:
+    if os.environ.get("RESON8_API_KEY"):
+        return os.environ["RESON8_API_KEY"].strip()
+    return RESON8_KEY_FILE.read_text(encoding="utf-8").strip() if RESON8_KEY_FILE.exists() else ""
+
+
+def transcribe(audio: bytes, phrases: list) -> str:
+    """Reson8 speech-to-text with speaker diarization -> "[mm:ss] Speaker N: ..." lines.
+    Stakeholder names are passed as phrases so Reson8 spells them right; recorded like every AI answer for offline replay."""
+    params = {"diarize": "true", "include_timestamps": "true", "filler_mode": "clean"}
+    if phrases:
+        params["phrases"] = ",".join(p.replace(",", " ") for p in phrases[:250])
+
+    def produce():
+        key = reson8_key()
+        if not key:
+            raise RuntimeError("No Reson8 API key: put it in reson8key.txt or set RESON8_API_KEY")
+        req = urllib.request.Request(f"{RESON8_URL}?{urllib.parse.urlencode(params)}", data=audio,
+                                     headers={"Authorization": f"ApiKey {key}", "Content-Type": "application/octet-stream"})
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Reson8 {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from None
+
+    data = cached("reson8_stt", json.dumps(params), hashlib.sha1(audio).hexdigest(), produce)
+    segs = data.get("segments") or [{"speaker_id": 0, "text": data.get("text", ""), "start_ms": data.get("start_ms", 0)}]
+    turns = []  # Consecutive segments of one speaker become one turn
+    for s in segs:
+        if turns and turns[-1][1] == s.get("speaker_id", 0):
+            turns[-1][2] += " " + s["text"]
+        else:
+            turns.append([s.get("start_ms", 0), s.get("speaker_id", 0), s["text"]])
+    return "\n".join(f"[{ms // 60000:02d}:{ms // 1000 % 60:02d}] Speaker {sid + 1}: {text.strip()}" for ms, sid, text in turns)
+
+
+def write_minutes(task: str, people: list, qa: list, transcript: str) -> dict:
+    system = (
+        "You take the minutes of a stakeholder meeting about this task. The transcript's speakers are anonymous (Speaker 1, 2…): "
+        "map each one to a stakeholder from the list using names said aloud, roles and what they care about, or 'Unknown' if unsure. "
+        "Record only what was actually said; never invent decisions. Something counts as decided only if it was explicitly agreed; "
+        "a request nobody settled is a wish, and a question nobody answered is an open question. "
+        "Write in the same language as the meeting."
+    )
+    content = f"Task description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\nQ&A so far:\n{qa_md(qa)}\n\nMeeting transcript:\n{transcript}"
+    return call_tool(system, content, "meeting_minutes", MINUTES_SCHEMA)
+
+
+def change_impact(task: str, people: list, qa: list, n_new: int, old: dict, new: dict) -> dict:
+    system = (
+        "You are the project's tech lead. The task brief was just rewritten after new input from stakeholders. "
+        "Compare the old and the new brief and say what changed for the people building it: only real changes to scope, acceptance criteria, "
+        "subtasks or decisions, never rewordings, each traced to the new input that caused it (its Q/W/D/M reference and who). "
+        "Name the stakeholders who should hear about it and why; skip whoever caused the change and anyone it doesn't touch. " + LANG_RULE
+    )
+    content = (
+        f"Task description:\n{task}\n\nStakeholders:\n{cast_md(people)}\n\n"
+        f"Q&A (the last {n_new} entries are new since the old brief):\n{qa_md(qa)}\n\n"
+        f"Old brief:\n{brief_md(old)}\n\nNew brief:\n{brief_md(new)}"
+    )
+    return call_tool(system, content, "change_impact", CHANGE_SCHEMA)
+
+
+def minutes_md(m: dict) -> str:
+    parts = [f"**Summary**: {m['summary']}"]
+    who = "; ".join(f"{x['speaker']} = {x['name']}" for x in m["speakers"])
+    if who:
+        parts.append(f"**Who spoke**: {who}")
+    for title, rows in [("Decided", [f"{d['decision']} ({d['by']})" for d in m["decisions"]]),
+                        ("New wishes", [f"{w['who']}: {w['wish']}" for w in m["wishes"]]),
+                        ("Open questions", [f"{q['question']} (for {q['to']})" for q in m["open_questions"]])]:
+        if rows:
+            parts.append(f"**{title}**\n" + "\n".join(f"- {r}" for r in rows))
+    if m["action_items"]:
+        parts.append("**Action items**\n" + "\n".join(
+            f"- [ ] **{x['owner']}**: {x['item']}" + (f" · due {x['due']}" if x["due"] else "") for x in m["action_items"]))
+    return "\n\n".join(parts)
+
+
+# ---------- Export: the brief as a ticket ----------
+
+
+def github_issue_md(b: dict, title: str, people: list) -> str:
+    lines = [f"# {title}", "", f"**Goal:** {b['goal']}", "", "## Stakeholders"]
+    lines += [f"- **{p['name']}** ({p['role']}{', owner' if p['owner'] else ''}){': ' + p['cares'] if p['cares'] else ''}" for p in people]
+    lines += ["", "## Scope", "**In:**"] + [f"- {x}" for x in b["in_scope"]]
+    if b["out_of_scope"]:
+        lines += ["", "**Out:**"] + [f"- {x}" for x in b["out_of_scope"]]
+    lines += ["", "## Acceptance criteria"] + [f"- [ ] {x}" for x in b["acceptance_criteria"]]
+    lines += ["", "## Subtasks"] + [f"- [ ] **{t['title']}**: {t['detail']}" for t in b["subtasks"]]
+    if b["decisions"]:
+        lines += ["", "## Decisions", "| Decision | Source |", "| --- | --- |"]
+        lines += [f"| {d['decision'].replace('|', '/')} | {d['source'].replace('|', '/')} |" for d in b["decisions"]]
+    if b["open_issues"]:
+        lines += ["", "## Open questions"] + [f"- {x}" for x in b["open_issues"]]
+    lines += ["", "<sub>Clarified with every stakeholder by Requirement Clarifier</sub>"]
+    return "\n".join(lines)
+
+
+def jira_markup(b: dict, title: str, people: list) -> str:
+    lines = [f"h1. {title}", f"*Goal:* {b['goal']}", "", "h2. Stakeholders"]
+    lines += [f"* *{p['name']}* ({p['role']}{', owner' if p['owner'] else ''}){': ' + p['cares'] if p['cares'] else ''}" for p in people]
+    lines += ["", "h2. Scope", "*In:*"] + [f"* {x}" for x in b["in_scope"]]
+    if b["out_of_scope"]:
+        lines += ["*Out:*"] + [f"* {x}" for x in b["out_of_scope"]]
+    lines += ["", "h2. Acceptance criteria"] + [f"# {x}" for x in b["acceptance_criteria"]]
+    lines += ["", "h2. Subtasks"] + [f"# *{t['title']}*: {t['detail']}" for t in b["subtasks"]]
+    if b["decisions"]:
+        lines += ["", "h2. Decisions", "||Decision||Source||"]
+        lines += [f"|{d['decision'].replace('|', '/')}|{d['source'].replace('|', '/')}|" for d in b["decisions"]]
+    if b["open_issues"]:
+        lines += ["", "h2. Open questions"] + [f"* {x}" for x in b["open_issues"]]
+    return "\n".join(lines)
+
+
 # ---------- State ----------
 
 TASK_DEFAULTS = {
@@ -602,6 +819,10 @@ TASK_DEFAULTS = {
     "pending": [],  # Questions waiting for a stakeholder
     "pending_to": {},  # Pending question -> stakeholder it was forwarded to
     "chat": [],  # Worker chat: {"role", "content"}
+    "impact": None,  # What the last brief rewrite changed (CHANGE_SCHEMA); None until a brief is rewritten
+    "demo_stale": False,  # The brief changed after the demo was built
+    "meeting": {},  # Meeting in progress: {"transcript", "minutes"}
+    "meet_n": 0,  # Meetings added to this task so far
 }
 KB_DEFAULTS = {
     "projects": {},  # Project name -> {"created", "deadline"}
@@ -792,13 +1013,36 @@ def add_wish(a: dict, who: str, text: str):
     S.wish_ver += 1
     save_doc(f"{S.task_id}-wish-{S.wish_ver}", "Q&A", f"Wish from {who}", f"Wish ({who}): {text}")
     log("Wish added", f"{who}: {text}")
+    react(a, "wish")
+
+
+def react(a: dict, what: str):
+    """New input (a wish, a meeting) arrived. Mid-round it waits for the next round; once clarification
+    has finished, pi reacts right away and may reopen questioning with follow-ups or conflicts."""
     if not S.clarified:
-        st.toast("Wish recorded; the AI takes it into account in the next round")
+        st.toast(f"The {what} is recorded; the AI takes it into account in the next round")
         return
     apply_clarify(a, clarify(S.task, a, cast(), S.qa, S.round + 1))
     if not S.clarified:
         S.stopped = False
-        st.toast("The new wish raised a conflict or follow-up questions")
+        st.toast(f"The {what} raised a conflict or follow-up questions")
+
+
+def apply_meeting(a: dict, m: dict, transcript: str):
+    """Meeting decisions and open questions become M lines, new wishes W lines; the minutes go into the knowledge base."""
+    S.meet_n += 1
+    n = S.meet_n
+    rows = [("Meeting decision", d["decision"], route(d["by"]), "meeting") for d in m["decisions"]]
+    rows += [("Left open in the meeting", q["question"], route(q["to"]), "meeting") for q in m["open_questions"]]
+    rows += [(f"Wish from {route(w['who'])}", w["wish"], route(w["who"]), "wish") for w in m["wishes"]]
+    for i, (q, ans, by, kind) in enumerate(rows):
+        S.qa.append({"q": q, "a": ans, "by": by, "round": S.round, "kind": kind})
+        save_doc(f"{S.task_id}-meet-{n}-{i}", "Q&A", q, f"{by}, in meeting {n}: {ans}")
+    save_doc(f"{S.task_id}-minutes-{n}", "Meeting", f"Meeting {n}: {m['summary']}",
+             minutes_md(m) + "\n\n**Transcript**\n\n" + transcript.replace("\n", "  \n"))
+    log("Meeting held", m["summary"])
+    S.meeting = {}
+    react(a, "meeting")
 
 
 def on_analyzed(a: dict):
@@ -842,7 +1086,8 @@ def project_docs(proj: str) -> list:
     return [d for d in S.docs if d["project"] == proj]
 
 
-DOC_SECTIONS = ["Requirement & understanding", "Task brief", "Requirement demo", "Q&A log"]
+DOC_SECTIONS = ["Requirement & understanding", "Task brief", "Requirement demo", "Meeting minutes", "Change log", "Q&A log"]
+CAUGHT_KEYS = ("-clar-", "-dec-", "-wish-", "-meet-")  # Record keys of issues settled before building: answers, conflicts, wishes, meeting notes
 
 
 def project_doc_md(proj: str, task_id=None, sections=DOC_SECTIONS) -> str:
@@ -866,8 +1111,13 @@ def project_doc_md(proj: str, task_id=None, sections=DOC_SECTIONS) -> str:
             lines += [f"##### {DOC_SECTIONS[1]}", main["Brief"]["content"]]
         if "Demo" in main and DOC_SECTIONS[2] in sections:
             lines += [f"##### {DOC_SECTIONS[2]}", f"Generated ({main['Demo']['time']:%m-%d %H:%M}); preview or download it in the \"Demo\" tab of this project."]
+        for kind, sec in (("Meeting", DOC_SECTIONS[3]), ("Change", DOC_SECTIONS[4])):
+            recs = [d for d in group if d["type"] == kind]
+            if recs and sec in sections:
+                lines.append(f"##### {sec} ({len(recs)})")
+                lines += [f"**{d['title']}** <small>{d['time']:%m-%d %H:%M}</small>\n\n{d['content']}" for d in recs]
         qas = [d for d in group if d["type"] == "Q&A"]
-        if qas and DOC_SECTIONS[3] in sections:
+        if qas and DOC_SECTIONS[-1] in sections:
             lines.append(f"##### Q&A log ({len(qas)})")
             lines += [f"**Q: {d['title']}**  \n{d['content']}  \n<small>{d['time']:%m-%d %H:%M}</small>" for d in qas]
     return "\n\n".join(lines)
@@ -1046,7 +1296,12 @@ def project_stats(proj: str) -> dict:
         if e["type"] in ("Subtask done", "Subtask reopened"):
             done[(e["task"], e["text"])] = e["type"] == "Subtask done"
     times = [d["time"] for d in docs] + [e["time"] for e in events]
+    caught = sum(any(k in d["key"] for k in CAUGHT_KEYS) for d in docs)
+    ai_answered = sum(e["type"] == "AI answered" for e in events)
     return {
+        "caught": caught,
+        "ai_answered": ai_answered,
+        "saved_h": caught * REWORK_H + ai_answered * INTERRUPT_H,
         "tasks": len(dict.fromkeys(d.get("task_id") for d in docs)),
         "qas": qas,
         "waiting": [d for d in qas if d["content"].startswith(WAITING)],
@@ -1140,7 +1395,7 @@ svg.focus .node.hot {opacity: 1;}
 
 KB_MAP_JS = r"""
 const NS = 'http://www.w3.org/2000/svg';
-const ITEM = {req: '#a78bfa', brief: '#22c55e', demo: '#3b82f6', qa: '#94a3b8', waiting: '#f59e0b'};
+const ITEM = {req: '#a78bfa', brief: '#22c55e', demo: '#3b82f6', meet: '#ec4899', qa: '#94a3b8', waiting: '#f59e0b'};
 
 function el(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -1163,7 +1418,7 @@ export default function (component) {
   box.appendChild(tip);
   const legend = document.createElement('div');
   legend.className = 'legend';
-  for (const [k, name] of [['req', 'Requirement'], ['brief', 'Brief'], ['demo', 'Demo'], ['qa', 'Q&A'], ['waiting', 'Awaiting answer']]) {
+  for (const [k, name] of [['req', 'Requirement'], ['brief', 'Brief'], ['demo', 'Demo'], ['meet', 'Meeting'], ['qa', 'Q&A'], ['waiting', 'Awaiting answer']]) {
     const s = document.createElement('span');
     s.style.setProperty('--c', ITEM[k]);
     s.textContent = name;
@@ -1359,6 +1614,9 @@ def map_task_node(proj: str, group: list, color: str) -> dict:
         elif d["type"] == "Demo":
             items.append({"kind": "demo", "label": "Requirement demo", "meta": [f"Generated {d['time']:%m-%d %H:%M}"],
                           "action": {"project": proj, "tab": KB_TABS[2]}, "cta": "Click to try the demo →"})
+        elif d["type"] == "Meeting":
+            items.append({"kind": "meet", "label": "Meeting", "meta": [short(d["title"], 140)],
+                          "action": {"project": proj, "tab": KB_TABS[1]}, "cta": "Click to read the minutes →"})
     for d in qas[-6:]:  # Keep the map readable: the latest Q&A only
         w = d in waiting
         items.append({"kind": "waiting" if w else "qa", "label": d["title"],
@@ -1413,25 +1671,45 @@ def stage() -> str:
 
 
 def gen_brief(a: dict) -> bool:
+    """Write the brief; a rewrite also works out what changed and who to tell, and keeps the demo for a targeted update."""
+    old, n_new = S.brief, len(S.qa) - S.brief_qa
     with st.spinner("Turning it into a brief you can start on…"):
         try:
-            S.brief, S.demo = write_brief(S.task, a, cast(), S.qa, S.remaining), None
-            S.history, S.brief_qa = list(S.qa), len(S.qa)
+            S.brief = write_brief(S.task, a, cast(), S.qa, S.remaining)
+            # Answers given during work and demo change requests aren't in S.qa; keep them
+            S.history, S.brief_qa = list(S.qa) + [h for h in S.history if h not in S.qa], len(S.qa)
             save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
             for i, h in enumerate(filter(is_question, S.qa)):
                 save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A ({h['by']}, pre-work clarification round {h['round']}): {h['a']}")
-            log("Brief generated", S.brief["goal"])
-            return True
+            log("Brief generated" if not old else "Brief rewritten", S.brief["goal"])
         except Exception as e:
             st.error(f"Call failed: {e}")
             return False
+    if not old:
+        S.demo, S.impact = None, None
+        return True
+    S.demo_stale = bool(S.demo)
+    with st.spinner("Working out what changed and who needs to know…"):
+        try:
+            S.impact = change_impact(S.task, cast(), S.qa, n_new, old, S.brief)
+        except Exception as e:
+            S.impact = None
+            st.toast(f"Couldn't work out the change impact: {e}")
+            return True
+    imp, n = S.impact, sum(d["type"] == "Change" for d in project_docs(S.task_project)) + 1
+    save_doc(f"{S.task_id}-chg-{n}", "Change", imp["headline"],
+             "\n".join(f"- {c['what']}: {c['before']} → {c['after']} ({c['because']})" for c in imp["changes"])
+             + "\n\nNotify: " + ("; ".join(f"{x['who']} ({x['why']})" for x in imp["notify"]) or "nobody")
+             + f"\n\nRework: {imp['rework']}")
+    log("Requirement changed", imp["headline"])
+    return True
 
 
 def build_demo(feedback: str = "") -> bool:
     with st.spinner("pi is building the prototype in its workspace…"):
         try:
             S.demo, S.demo_steps = make_demo(S.task, S.brief, S.history, feedback)
-            S.demo_ver += 1
+            S.demo_ver, S.demo_stale = S.demo_ver + 1, False
             save_doc(f"{S.task_id}-demo", "Demo", f"{S.task_title} · Requirement demo", S.demo)
             if feedback:
                 S.history.append({"q": "Change requests for the requirement demo", "a": feedback, "by": S.acting or owner()})
@@ -1499,13 +1777,18 @@ def qa_summary():
     if not S.qa:
         return
     nq, nw = sum(map(is_question, S.qa)), sum(map(is_wish, S.qa))
-    with st.expander(f"💬 Q&A: {nq} answer(s) · {nw} wish(es) · {len(S.qa) - nq - nw} conflict(s) settled"):
+    nd = sum(h.get("kind") == "decision" for h in S.qa)
+    nm = len(S.qa) - nq - nw - nd
+    with st.expander(f"💬 Q&A: {nq} answer(s) · {nw} wish(es) · {nd} conflict(s) settled"
+                     + (f" · {nm} meeting note(s)" if nm else "")):
         n = 0  # Question number; wishes and decisions are not numbered
         for h in S.qa:
             if is_wish(h):
                 st.markdown(f"💬 **{h['by']} wishes:** {h['a']}")
             elif h.get("kind") == "decision":
                 st.markdown(f"⚖️ **{h['by']} settled** {h['q']}: {h['a']}")
+            elif h.get("kind") == "meeting":
+                st.markdown(f"🎙️ **{h['q']}** ({h['by']}): {h['a']}")
             else:
                 n += 1
                 st.markdown(f"**Q{n}. {h['q']}**  \n{h['by']}: {h['a']}")
@@ -1614,17 +1897,142 @@ def questions_step(a: dict):
             st.rerun()
 
 
-def brief_step(a: dict):
-    b = S.brief
+def stale_brief_notice(a: dict):
     if len(S.qa) > S.brief_qa:
         c1, c2 = st.columns([4, 1])
-        c1.warning("New answers or wishes since this brief was written")
+        c1.warning("New answers, wishes or meeting notes since this brief was written")
         if c2.button("Rewrite brief", use_container_width=True) and gen_brief(a):
             st.rerun()
+
+
+def impact_card(imp: dict, key: str, update_demo: bool = False):
+    """What the last brief rewrite changed, who to tell, and (on the Stakeholders page) a one-click demo update."""
+    rework = {"none": "ok", "small": "warn", "large": "bad"}.get(imp["rework"], "")
+    with st.container(border=True):
+        st.markdown(f'**📣 Requirement changed:** {htmllib.escape(imp["headline"])} '
+                    f'<span class="pill {rework}">rework: {htmllib.escape(imp["rework"])}</span>', unsafe_allow_html=True)
+        if imp["changes"]:
+            st.dataframe(pd.DataFrame(imp["changes"], columns=["what", "before", "after", "because"]).rename(
+                columns={"what": "What", "before": "Before", "after": "After", "because": "Because of"}),
+                hide_index=True, use_container_width=True)
+        if imp["notify"]:
+            st.markdown("**Tell:** " + " · ".join(f"**{route(x['who'])}** ({x['why']})" for x in imp["notify"]))
+        if update_demo and S.demo_stale:
+            change = "; ".join(f"{c['what']}: {c['after']}" for c in imp["changes"]) or imp["headline"]
+            if st.button("Update the demo for these changes", key=f"btn_upd_{key}", type="primary") \
+                    and build_demo(f"Apply the requirement changes: {change}"):
+                st.rerun()
+
+
+def export_menu(b: dict, key: str):
+    with st.popover("📤 Export as ticket", use_container_width=True):
+        gh, jira = github_issue_md(b, S.task_title, cast()), jira_markup(b, S.task_title, cast())
+        kind = st.radio("Format", ["GitHub issue", "Jira"], key=f"sub_exp_{key}", horizontal=True, label_visibility="collapsed")
+        text, ext = (gh, "md") if kind == "GitHub issue" else (jira, "txt")
+        st.code(text, language="markdown" if ext == "md" else None, height=320)
+        st.download_button(f"Download .{ext}", text, file_name=f"{S.task_title or 'task'}.{ext}", key=f"dl_exp_{key}",
+                           use_container_width=True)
+
+
+def caught_line():
+    """The value in one line: what was settled before anyone wrote code, and the rework that likely saved."""
+    n = len(S.qa)
+    if n:
+        st.success(f"🛡️ **{n} issue(s) settled before a line of code** · ≈{n * REWORK_H:g}h of rework avoided "
+                   f"(estimate: {REWORK_H}h per issue found after building)")
+
+
+def meeting_box(a: dict):
+    """Record or upload a stakeholder meeting → Reson8 transcribes it with speakers → AI writes minutes → add them to the task."""
+    m = S.meeting
+    title = "🎙️ Meeting notes · record a stakeholder meeting, Reson8 transcribes it"
+    with st.expander(title, expanded=bool(m) or (a["needs_meeting"] and not S.meet_n)):
+        if a["needs_meeting"] and not S.meet_n:
+            st.caption(f"The AI suggested a face-to-face talk: {a['meeting_reason']}")
+        if not m.get("transcript"):
+            src = segmented("Source", ["🎙️ Record", "📁 Upload", "📝 Paste transcript"], "sub_meet_src")
+            audio = None
+            if src == "🎙️ Record":
+                rec = st.audio_input("Record the meeting", key="sub_meet_rec", label_visibility="collapsed")
+                audio = rec.getvalue() if rec else None
+            elif src == "📁 Upload":
+                up = st.file_uploader("Meeting recording", type=AUDIO_TYPES, key="sub_meet_up", label_visibility="collapsed")
+                audio = up.getvalue() if up else None
+                if not up and SAMPLE_MEETING.exists() and st.button("Use the sample meeting", type="tertiary"):
+                    S.meeting = {"audio": SAMPLE_MEETING.read_bytes()}
+                    st.rerun()
+                audio = audio or m.get("audio")
+                if audio:
+                    st.audio(audio)
+            else:
+                text = st.text_area("Transcript", key="sub_meet_text", height=160, label_visibility="collapsed",
+                                    placeholder="Speaker 1: …\nSpeaker 2: …  (for meetings in a language Reson8 doesn't cover)")
+                if st.button("Use this transcript", disabled=not text.strip()):
+                    S.meeting = {"transcript": text.strip()}
+                    st.rerun()
+            if audio is not None:
+                st.caption("Reson8 covers English, German, French, Spanish, Italian, Dutch, Portuguese, Polish, Swedish and Frisian.")
+                if st.button("Transcribe with Reson8", type="primary"):
+                    with st.spinner("Reson8 is transcribing and telling the speakers apart…"):
+                        try:
+                            S.meeting = {"transcript": transcribe(audio, [p["name"] for p in cast()])}
+                            log("Meeting transcribed", f"{S.meeting['transcript'].count(chr(10)) + 1} turn(s)")
+                            ok = True
+                        except Exception as e:
+                            st.error(f"Transcription failed: {e}")
+                            ok = False
+                    if ok:
+                        st.rerun()
+            return
+        with st.container(height=180):
+            st.markdown(m["transcript"].replace("\n", "  \n"))
+        if not m.get("minutes"):
+            c1, c2 = st.columns([1, 1])
+            if c1.button("Write the minutes", type="primary", use_container_width=True):
+                with st.spinner("AI is writing the minutes and matching speakers to stakeholders…"):
+                    try:
+                        S.meeting = {**m, "minutes": write_minutes(S.task, cast(), S.qa, m["transcript"])}
+                        ok = True
+                    except Exception as e:
+                        st.error(f"Call failed: {e}")
+                        ok = False
+                if ok:
+                    st.rerun()
+            if c2.button("Discard", use_container_width=True):
+                S.meeting = {}
+                st.rerun()
+            return
+        mins = m["minutes"]
+        st.markdown(minutes_md(mins))
+        c1, c2 = st.columns([1, 1])
+        if c1.button("Add to the task", type="primary", use_container_width=True,
+                     help="Decisions and open questions become M lines, new wishes W lines; the AI then checks for conflicts"):
+            with st.spinner("AI is checking what the meeting changes…"):
+                try:
+                    apply_meeting(a, mins, m["transcript"])
+                    ok = True
+                except Exception as e:
+                    st.error(f"Call failed: {e}")
+                    ok = False
+            if ok:
+                st.rerun()
+        if c2.button("Discard", use_container_width=True):
+            S.meeting = {}
+            st.rerun()
+
+
+def brief_step(a: dict):
+    b = S.brief
+    stale_brief_notice(a)
+    if S.impact:
+        impact_card(S.impact, "brief")
     nq, nw = sum(map(is_question, S.qa)), sum(map(is_wish, S.qa))
+    nd = sum(h.get("kind") == "decision" for h in S.qa)
+    nm = len(S.qa) - nq - nw - nd
     st.markdown(" ".join(f'<span class="pill">{t}</span>' for t in [
-        f"{nq} questions", f"{nw} wishes", f"{len(S.qa) - nq - nw} conflicts settled",
+        f"{nq} questions", f"{nw} wishes", f"{nd} conflicts settled"] + ([f"{nm} meeting notes"] if nm else []) + [
         f"{len(b['decisions'])} decisions", f"{len(b['open_issues'])} still open"]), unsafe_allow_html=True)
+    caught_line()
     left, right = st.columns([1, 2])
     with left, st.container(border=True):
         label("Before: the one-liner")
@@ -1632,24 +2040,32 @@ def brief_step(a: dict):
     with right, st.container(border=True):
         label("After: a brief the worker can start on")
         render_brief(b, compact=True)
-    if st.button("Build clickable demo", type="primary") and build_demo():
+    c1, c2, _ = st.columns([1, 1, 2])
+    if c1.button("Build clickable demo", type="primary", use_container_width=True) and build_demo():
         st.rerun()
+    with c2:
+        export_menu(b, "brief")
 
 
 def demo_step(a: dict):
+    stale_brief_notice(a)
+    if S.impact:
+        impact_card(S.impact, "demo", update_demo=True)
     with st.expander("📋 Task brief"):
         render_brief(S.brief, compact=True)
     with st.container(border=True):
         show_demo(S.demo)
     if S.demo_steps:
         st.caption(f"pi worked in workspaces/{workspace_name()}/: {steps_md(S.demo_steps)}")
-    c1, c2, c3 = st.columns([3, 1, 1])
+    c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
     feedback = c1.text_input("What's wrong?", key=f"demo_fb_{S.demo_ver}", label_visibility="collapsed",
                              placeholder=f"What should change, {S.acting}? e.g. bigger buttons, show history")
     if c2.button("Redo with feedback", disabled=not feedback.strip(), use_container_width=True) and build_demo(feedback.strip()):
         st.rerun()
     c3.download_button("Download HTML", S.demo, file_name=f"{S.task_title or 'demo'}.html", mime="text/html",
                        use_container_width=True)
+    with c4:
+        export_menu(S.brief, "demo")
     st.button("Switch to worker view →", type="primary", on_click=goto, args=("Worker",))
 
 
@@ -1726,6 +2142,7 @@ if page == "Stakeholders":
         else:
             qa_summary()
             (brief_step if step == "brief" else demo_step)(a)
+        meeting_box(a)
         wish_box(a)
 
 elif page == "Worker":
@@ -1736,9 +2153,12 @@ elif page == "Worker":
 
     left, right = st.columns([1, 1])
     with left:
+        if S.impact:
+            impact_card(S.impact, "worker")
         with st.container(border=True):
             label("My task")
             render_brief(S.brief, checkable=True)
+        export_menu(S.brief, "worker")
         if S.demo:
             with st.expander("Requirement demo (as confirmed by the requester)"):
                 show_demo(S.demo, height=500)
@@ -1788,11 +2208,15 @@ else:  # Project Knowledge Base
     if S.kb_open not in S.projects:
         all_stats = {p: project_stats(p) for p in S.projects}
         waiting_total = sum(len(v["waiting"]) for v in all_stats.values())
-        m = st.columns(4)
+        m = st.columns(6)
         m[0].metric("Projects", len(S.projects))
         m[1].metric("Tasks", sum(v["tasks"] for v in all_stats.values()))
         m[2].metric("Q&A captured", sum(len(v["qas"]) for v in all_stats.values()))
         m[3].metric("Awaiting stakeholders", waiting_total)
+        m[4].metric("🛡️ Caught before coding", sum(v["caught"] for v in all_stats.values()),
+                    help="Answers, settled conflicts, wishes and meeting notes captured before building")
+        m[5].metric("⏱️ Rework avoided", f"≈{sum(v['saved_h'] for v in all_stats.values()):g}h",
+                    help=f"Estimate: {REWORK_H}h per issue caught before building, {INTERRUPT_H:g}h per worker question the AI answered without interrupting anyone")
 
         st.subheader("All projects")
         st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on.")
@@ -1883,12 +2307,14 @@ else:  # Project Knowledge Base
 
     st.button("← All projects", on_click=open_project, args=(None,))
     st.markdown(hero_html(proj), unsafe_allow_html=True)
-    c = st.columns(5)
+    c = st.columns(6)
     c[0].metric("Tasks", ps["tasks"])
-    c[1].metric("Briefs", ps["briefs"])
-    c[2].metric("Q&A records", len(ps["qas"]))
-    c[3].metric("Awaiting answer", len(ps["waiting"]))
-    c[4].metric("Until deadline", f"{(info['deadline'] - date.today()).days} days" if info["deadline"] else "Not set")
+    c[1].metric("Q&A records", len(ps["qas"]))
+    c[2].metric("Awaiting answer", len(ps["waiting"]))
+    c[3].metric("🛡️ Caught before coding", ps["caught"], help="Answers, settled conflicts, wishes and meeting notes captured before building")
+    c[4].metric("⏱️ Rework avoided", f"≈{ps['saved_h']:g}h",
+                help=f"Estimate: {REWORK_H}h per issue caught before building, {INTERRUPT_H:g}h per worker question the AI answered without interrupting anyone")
+    c[5].metric("Until deadline", f"{(info['deadline'] - date.today()).days} days" if info["deadline"] else "Not set")
 
     if ps["waiting"]:
         with st.container(border=True):
