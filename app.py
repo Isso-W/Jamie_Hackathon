@@ -4,8 +4,13 @@ everything is captured in a project knowledge base: one document per project, sh
 
 Run:
     pip install -r requirements.txt
+    cd harness && npm install          (pi agent harness; needs Node 22+)
     Put your Qwen (Alibaba Cloud Model Studio, international site) API key in apikey.txt in the same folder
-    streamlit run app.py
+    streamlit run app.py               (starts the pi harness sidecar automatically)
+
+Engine:
+    Every AI call is a job run by the pi agent harness (harness/server.mjs): one fresh pi session per job.
+    If the harness fails, the call falls back to the direct Qwen API, then to the recording.
 
 Demo:
     During normal calls, every AI answer is automatically recorded to demo_cache.json.
@@ -19,7 +24,10 @@ import hashlib
 import html as htmllib
 import json
 import re
+import subprocess
 import time
+import urllib.error
+import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 
@@ -29,7 +37,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
 
-MODEL = "qwen3.8-max"
+MODEL = "qwen3.8-max"  # Direct-API fallback model
+PI_MODEL = "dashscope/qwen3.8-max"  # Default harness model, as provider/id from harness/agent/models.json
+HARNESS_DIR = Path(__file__).parent / "harness"
+HARNESS_URL = "http://127.0.0.1:8765"
 BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"  # International site; for mainland China keys use https://dashscope.aliyuncs.com/compatible-mode/v1
 KEY_FILE = Path(__file__).parent / "apikey.txt"
 CACHE_FILE = Path(__file__).parent / "demo_cache.json"
@@ -99,13 +110,26 @@ ANALYZE_SCHEMA = {
                 },
                 "required": ["question", "why", "options"],
             },
-            "description": "The most critical clarifying questions, at most 3, ordered by importance",
+            "description": "This round's most critical clarifying questions, at most 3, ordered by importance",
         },
         "needs_meeting": {"type": "boolean", "description": "Whether it involves multi-party decisions or conflicting interests that need a face-to-face talk"},
         "meeting_reason": {"type": "string"},
     },
     "required": ["title", "understanding", "deadline", "subtasks", "known", "questions", "needs_meeting", "meeting_reason"],
 }
+
+CLARIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "understanding": {"type": "string", "description": "Your understanding of the task goal, updated with every answer so far, in one or two sentences"},
+        "complete": {"type": "boolean", "description": "True only when no open decision would still change what gets built"},
+        "remaining": {"type": "array", "items": {"type": "string"},
+                      "description": "Decisions still open that matter; for 'not sure' answers, include your recommended default"},
+        "questions": ANALYZE_SCHEMA["properties"]["questions"],
+    },
+    "required": ["understanding", "complete", "remaining", "questions"],
+}
+MAX_ROUNDS = 4  # Hard stop so a demo never loops forever; whatever is still open goes into the brief's open issues
 
 BRIEF_SCHEMA = {
     "type": "object",
@@ -167,7 +191,7 @@ ALL_SCHEMA = {
     "required": ["found", "answer", "sources", "projects"],
 }
 
-# ---------- Qwen calls (OpenAI-compatible API) + record / replay ----------
+# ---------- AI calls: pi harness (direct Qwen API as fallback) + record / replay ----------
 
 
 @st.cache_resource
@@ -207,8 +231,54 @@ def cached(name: str, system: str, content: str, produce) -> dict:
     return data
 
 
-def call_tool(system: str, content: str, name: str, schema: dict) -> dict:
-    def produce():
+def harness_get(path: str, timeout: float = 3) -> dict:
+    with urllib.request.urlopen(HARNESS_URL + path, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+@st.cache_resource
+def start_harness() -> dict:
+    """Reuse a running sidecar, or start one and wait for it; returns its /health."""
+    try:
+        return harness_get("/health")
+    except OSError:
+        pass
+    subprocess.Popen(["node", "server.mjs"], cwd=HARNESS_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    for _ in range(60):
+        time.sleep(0.5)
+        try:
+            return harness_get("/health")
+        except OSError:
+            pass
+    raise RuntimeError("The pi harness did not start (run `npm install` in harness/)")
+
+
+def run_job(job: dict) -> dict:
+    """Run one job in a fresh pi session. Job keys: system, prompt, schema, tools, workspace, skills, model."""
+    start_harness()
+    job = {"model": st.session_state.get("pi_model") or PI_MODEL, **job}
+    req = urllib.request.Request(HARNESS_URL + "/run", data=json.dumps(job).encode("utf-8"),
+                                 headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(json.loads(e.read()).get("error", str(e))) from None
+
+
+def via_harness(job: dict, direct):
+    """Prefer pi; on failure (or with the direct engine picked) use the direct Qwen API."""
+    if st.session_state.get("engine", "pi") == "pi":
+        try:
+            return run_job(job)
+        except Exception as e:
+            st.toast(f"pi harness failed, using the direct API: {e}")
+    return direct()
+
+
+def call_tool(system: str, content: str, name: str, schema: dict, skills: tuple = ()) -> dict:
+    def direct():
         resp = get_client().chat.completions.create(
             model=MODEL,
             max_tokens=3000,
@@ -220,7 +290,10 @@ def call_tool(system: str, content: str, name: str, schema: dict) -> dict:
         calls = resp.choices[0].message.tool_calls
         if not calls:
             raise RuntimeError("The model did not return a structured result")
-        return json.loads(calls[0].function.arguments)
+        return {"result": json.loads(calls[0].function.arguments)}
+
+    def produce():
+        return via_harness({"system": system, "prompt": content, "schema": schema, "skills": list(skills)}, direct)["result"]
 
     return coerce(cached(name, system, content, produce), schema)
 
@@ -255,7 +328,7 @@ def coerce(v, schema: dict):
 
 def call_text(system: str, content: str, name: str, max_tokens: int = 8000) -> str:
     """Long text output (e.g. HTML) skips tool use and asks for a plain reply, which is more reliable."""
-    def produce():
+    def direct():
         resp = get_client().chat.completions.create(
             model=MODEL,
             max_tokens=max_tokens,
@@ -263,6 +336,9 @@ def call_text(system: str, content: str, name: str, max_tokens: int = 8000) -> s
             extra_body={"enable_thinking": False},
         )
         return {"text": resp.choices[0].message.content or ""}
+
+    def produce():
+        return {"text": via_harness({"system": system, "prompt": content}, direct)["text"]}
 
     return cached(name, system, content, produce)["text"]
 
@@ -273,29 +349,52 @@ def analyze(task: str) -> dict:
         "Break down the task, find ambiguities and hidden assumptions, and ask only the key questions that really affect implementation; don't ask about the obvious. "
         "Don't make assumptions on the requester's behalf: if information is missing, ask. " + LANG_RULE
     )
-    return call_tool(system, f"Today is {date.today()}.\nTask description:\n{task}", "task_analysis", ANALYZE_SCHEMA)
+    return call_tool(system, f"Today is {date.today()}.\nTask description:\n{task}", "task_analysis", ANALYZE_SCHEMA, skills=("grill-me",))
 
 
-def write_brief(task: str, analysis: dict, answers: dict) -> dict:
-    qa = "\n".join(f"Q: {q}\nA: {a}" for q, a in answers.items())
+def qa_md(qa: list) -> str:
+    return "\n".join(f"Q{i} (round {h.get('round', 1)}): {h['q']}\nA ({h['by']}): {h['a']}" for i, h in enumerate(qa, 1)) or "(none)"
+
+
+def clarify(task: str, analysis: dict, qa: list, round_no: int) -> dict:
+    system = (
+        "You are an experienced tech lead grilling the requester, round after round, until the request is fully explained. "
+        "You get the task, your current understanding and every answer so far. Answers often open new decisions: ask the follow-ups they raise. "
+        "Never repeat a question that was already answered. If an answer was 'not sure', don't ask it again: put it in remaining with your recommended default. "
+        "Only ask what changes what gets built. Set complete to true, with no questions, once nothing open would change the implementation. " + LANG_RULE
+    )
+    content = (
+        f"Today is {date.today()}.\nTask description:\n{task}\n\nCurrent understanding: {analysis['understanding']}\n\n"
+        f"Q&A so far:\n{qa_md(qa)}\n\nThis is round {round_no} of at most {MAX_ROUNDS}."
+    )
+    return call_tool(system, content, "clarify_round", CLARIFY_SCHEMA, skills=("grill-me",))
+
+
+def write_brief(task: str, analysis: dict, qa: list, remaining: list) -> dict:
     system = (
         "Based on the task description and the clarification Q&A, write a task brief the worker can start on right away. "
         "Every decision must trace back to an answer; anything without a basis can only go into open issues. " + LANG_RULE
     )
-    content = f"Task description:\n{task}\n\nInitial understanding: {analysis['understanding']}\n\nClarification Q&A:\n{qa or '(none)'}"
+    content = (
+        f"Task description:\n{task}\n\nUnderstanding after clarification: {analysis['understanding']}\n\n"
+        f"Clarification Q&A:\n{qa_md(qa)}\n\nStill open: {'; '.join(remaining) or '(nothing)'}"
+    )
     return call_tool(system, content, "task_brief", BRIEF_SCHEMA)
 
 
-def make_demo(task: str, brief: dict, feedback: str = "") -> str:
+def make_demo(task: str, brief: dict, qa: list, feedback: str = "") -> str:
     system = (
-        "You are a product prototype designer. Based on the task brief, build an interactive single-file HTML prototype "
+        "You are a product prototype designer. Based on the requester's answers in the Q&A and the task brief, build an interactive single-file HTML prototype "
         "so the requester can confirm at a glance that \"this is roughly what it will look like\". "
+        "Every answer that changes what the user sees or does must be visible and working in the prototype (e.g. if they chose CSV export, there is a working Export CSV button); "
+        "earlier change requests in the Q&A still apply. Don't add features nobody asked for or answered. "
+        "At the bottom, add a small collapsed <details> section titled \"Built from your answers\" mapping each visible feature to the answer it came from. "
         "Requirements: implement only the core features within the brief's scope, and buttons and inputs must actually work; use fake data where data is needed; "
         "don't access the network or reference any external files, fonts or CDNs; inline all CSS and JS; "
         "keep the style clean and modern, with UI text in the same language as the task description; keep the overall height within 520px and the width responsive. "
         "Output only one ```html code block, with no explanation."
     )
-    content = f"Task description:\n{task}\n\nTask brief:\n{brief_md(brief)}"
+    content = f"Task description:\n{task}\n\nRequester's Q&A:\n{qa_md(qa)}\n\nTask brief:\n{brief_md(brief)}"
     if feedback:
         content += f"\n\nRequester's change requests after seeing the previous demo (must be reflected): {feedback}"
     text = call_text(system, content, "demo_html")
@@ -313,7 +412,7 @@ def answer_worker(task: str, brief: dict, history: list, question: str) -> dict:
         "If the basis is insufficient, set can_answer to false and turn it into a clear question for the requester. " + LANG_RULE
     )
     content = f"Task description:\n{task}\n\nTask brief:\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n\nPast Q&A:\n{hist}\n\nWorker's question: {question}"
-    return call_tool(system, content, "worker_answer", WORKER_SCHEMA)
+    return call_tool(system, content, "worker_answer", WORKER_SCHEMA, skills=("grill-me",))
 
 
 def answer_kb(project: str, info: dict, doc_md: str, events: list, question: str) -> dict:
@@ -350,6 +449,11 @@ TASK_DEFAULTS = {
     "task_title": "",
     "task_project": "",  # Project the task belonged to when posted
     "analysis": None,
+    "qa": [],  # Clarification answers across all rounds: {"q", "a", "by", "round"}
+    "round": 1,  # Current clarification round
+    "clarified": False,  # True once the AI has nothing left to ask (or MAX_ROUNDS was hit, or the requester stopped)
+    "remaining": [],  # Decisions still open after clarification
+    "stopped": False,  # Clarification ended before the AI said it was complete
     "brief": None,
     "demo": None,  # HTML of the requirement demo
     "demo_ver": 0,  # +1 on every regeneration, used to clear the change-request input
@@ -660,6 +764,13 @@ with st.sidebar:
     c1.button("New task", on_click=new_task, help="Archive the current task; the knowledge base is kept")
     c2.button("Clear all", on_click=clear_all)
     st.divider()
+    st.radio("AI engine", ["pi", "direct"], key="engine", horizontal=True,
+             help="pi: every call runs as a pi agent job. direct: plain Qwen API calls. pi falls back to direct on failure.")
+    if S.engine == "pi":
+        try:
+            st.selectbox("Model", start_harness()["models"], key="pi_model")
+        except Exception as e:
+            st.caption(f"pi harness unavailable: {e}")
     st.toggle("Offline demo mode", key="replay",
               help="Prefer recorded answers, no network needed. Normal calls are recorded automatically; failed API calls also fall back to recordings.")
     st.caption(f"{len(get_cache())} AI answer(s) recorded")
@@ -685,6 +796,8 @@ if page == "Requester":
         with st.spinner("AI is breaking down the task and looking for ambiguities…"):
             try:
                 S.analysis, S.brief, S.demo = analyze(S.task), None, None
+                S.qa, S.round, S.remaining, S.stopped = [], 1, [], False
+                S.clarified = not S.analysis["questions"]
                 on_analyzed(S.analysis)
                 ok = True
             except Exception as e:
@@ -709,46 +822,82 @@ if page == "Requester":
             st.warning(f"Suggest talking face to face: {a['meeting_reason']}")
 
         st.markdown(
-            f'### 3. AI\'s questions <span class="pill">Only the {len(a["questions"])} question(s) that affect implementation</span>',
+            f'### 3. AI\'s questions <span class="pill">Round {S.round} · keeps asking until the request is fully explained</span>',
             unsafe_allow_html=True,
         )
-        answers = {}
-        for i, q in enumerate(a["questions"]):
-            with st.container(border=True):
-                st.markdown(f"**Q{i + 1}. {q['question']}**")
-                st.caption(f"Why ask: {q['why']}")
-                choice = None
-                if q["options"]:
-                    choice = st.radio("Pick one", q["options"] + ["Other / not sure"], key=f"opt_{i}", horizontal=True,
-                                      label_visibility="collapsed")
-                text = st.text_input("Additional notes (optional)", key=f"ans_{i}", placeholder="Additional notes (optional)",
-                                     label_visibility="collapsed")
-                if choice and choice != "Other / not sure":
-                    answers[q["question"]] = f"{choice}. {text}" if text else choice
-                else:
-                    answers[q["question"]] = text or "Not sure, decide later"
+        if S.qa:
+            with st.expander(f"Answered so far ({len(S.qa)})"):
+                for i, h in enumerate(S.qa, 1):
+                    st.markdown(f"**Q{i}. {h['q']}**  \n{h['a']}")
+        if not S.clarified:
+            answers = {}
+            for i, q in enumerate(a["questions"]):
+                with st.container(border=True):
+                    st.markdown(f"**Q{len(S.qa) + i + 1}. {q['question']}**")
+                    st.caption(f"Why ask: {q['why']}")
+                    choice = None
+                    if q["options"]:
+                        choice = st.radio("Pick one", q["options"] + ["Other / not sure"], key=f"opt_{S.round}_{i}", horizontal=True,
+                                          label_visibility="collapsed")
+                    text = st.text_input("Additional notes (optional)", key=f"ans_{S.round}_{i}", placeholder="Additional notes (optional)",
+                                         label_visibility="collapsed")
+                    if choice and choice != "Other / not sure":
+                        answers[q["question"]] = f"{choice}. {text}" if text else choice
+                    else:
+                        answers[q["question"]] = text or "Not sure, decide later"
 
-        if st.button("Generate task brief", type="primary"):
-            with st.spinner("Turning it into a brief you can start on…"):
-                try:
-                    S.brief, S.demo = write_brief(S.task, a, answers), None
-                    S.history = [{"q": q, "a": ans, "by": "requester"} for q, ans in answers.items()]
-                    save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
-                    for i, (q, ans) in enumerate(answers.items()):
-                        save_doc(f"{S.task_id}-clar-{i}", "Q&A", q, f"A (requester, pre-work clarification): {ans}")
-                    log("Brief generated", S.brief["goal"])
-                    ok = True
-                except Exception as e:
-                    st.error(f"Call failed: {e}")
-                    ok = False
-            if ok:
-                st.rerun()
+            c1, c2 = st.columns(2)
+            submit = c1.button("Submit answers", type="primary", use_container_width=True)
+            stop = c2.button("Enough, write the brief", use_container_width=True,
+                             help="Stop asking; anything still unclear goes into the brief's open issues")
+            if submit or stop:
+                S.qa += [{"q": q, "a": ans, "by": "requester", "round": S.round} for q, ans in answers.items()]
+                ok = True
+                if stop or S.round >= MAX_ROUNDS:
+                    S.clarified = S.stopped = True
+                else:
+                    with st.spinner("AI is checking what your answers still leave open…"):
+                        try:
+                            r = clarify(S.task, a, S.qa, S.round + 1)
+                            a["understanding"], a["questions"], S.remaining = r["understanding"], r["questions"], r["remaining"]
+                            S.round += 1
+                            S.clarified = r["complete"] or not r["questions"]
+                            log("Clarification round", f"Round {S.round - 1}: {len(answers)} answer(s)")
+                        except Exception as e:
+                            S.qa = S.qa[: len(S.qa) - len(answers)]  # Let the requester resubmit the same round
+                            st.error(f"Call failed: {e}")
+                            ok = False
+                if ok:
+                    st.rerun()
+        else:
+            rounds = len({h["round"] for h in S.qa})
+            if S.stopped or S.remaining:
+                st.warning(f"Clarification stopped after {rounds} round(s); open items go into the brief")
+                bullets(S.remaining)
+            else:
+                st.success(f"Request fully explained: {len(S.qa)} answer(s) over {rounds} round(s)")
+
+            if st.button("Generate task brief", type="primary"):
+                with st.spinner("Turning it into a brief you can start on…"):
+                    try:
+                        S.brief, S.demo = write_brief(S.task, a, S.qa, S.remaining), None
+                        S.history = list(S.qa)
+                        save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
+                        for i, h in enumerate(S.qa):
+                            save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A (requester, pre-work clarification round {h['round']}): {h['a']}")
+                        log("Brief generated", S.brief["goal"])
+                        ok = True
+                    except Exception as e:
+                        st.error(f"Call failed: {e}")
+                        ok = False
+                if ok:
+                    st.rerun()
 
     if S.brief:
         b = S.brief
         st.subheader("4. Task brief")
         m = st.columns(4)
-        m[0].metric("Questions clarified", len(a["questions"]) if a else 0)
+        m[0].metric("Questions clarified", len(S.qa))
         m[1].metric("Decisions confirmed", len(b["decisions"]))
         m[2].metric("Acceptance criteria", len(b["acceptance_criteria"]))
         m[3].metric("Still undecided", len(b["open_issues"]))
@@ -763,7 +912,7 @@ if page == "Requester":
         st.markdown('### 5. Requirement demo <span class="pill">Take a look first: is this what you meant?</span>', unsafe_allow_html=True)
         feedback = ""
         if not S.demo:
-            st.caption("Generate a simple clickable prototype from the brief. Requesters spot \"that's not what I wanted\" faster from a picture than from text.")
+            st.caption("Generate a simple clickable prototype from your answers and the brief. Requesters spot \"that's not what I wanted\" faster from a picture than from text.")
             gen = st.button("Generate requirement demo", type="primary")
         else:
             with st.container(border=True):
@@ -777,7 +926,7 @@ if page == "Requester":
         if gen:
             with st.spinner("Turning the brief into a clickable prototype…"):
                 try:
-                    S.demo = make_demo(S.task, b, feedback.strip())
+                    S.demo = make_demo(S.task, b, S.history, feedback.strip())
                     S.demo_ver += 1
                     save_doc(f"{S.task_id}-demo", "Demo", f"{S.task_title} · Requirement demo", S.demo)
                     if feedback.strip():

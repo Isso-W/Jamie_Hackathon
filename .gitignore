@@ -1,1 +1,5 @@
 apikey.txt
+__pycache__/
+workspaces/
+harness/node_modules/
+harness/agent/auth.json
