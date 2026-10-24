@@ -973,58 +973,58 @@ def cover_html(proj: str) -> str:
     )
 
 
-# ---------- Pages ----------
+# ---------- Stakeholders page: one step at a time ----------
 
-st.set_page_config(page_title="Requirement Clarifier", page_icon="🧭", layout="wide")
-st.markdown(CSS, unsafe_allow_html=True)
 
-with st.sidebar:
-    st.radio("View", PAGES, key="page")
-    st.text_input("Current project", key="project", disabled=S.task_id is not None,
-                  help="New tasks go under this project; you can switch after starting a new task")
-    if S.task_id is not None:
-        st.caption(f"Current task: {S.task_title}")
-    if S.page == "Stakeholders" and S.analysis:
-        names = [x["name"] for x in cast()]
-        S.acting = st.selectbox("Acting as", names, index=names.index(S.acting) if S.acting in names else 0,
-                                help="Switch to answer as another stakeholder; each question goes to the person who owns that decision")
-        st.caption(f"Owner: {owner()} (settles conflicts, can stop the questioning)")
-    if S.pending:
-        st.warning(f"{len(S.pending)} worker question(s) waiting for stakeholders")
-    n_qa = sum(d["type"] == "Q&A" for d in S.docs)
-    st.caption(f"Knowledge base: {len(S.projects)} project doc(s), {n_qa} Q&A, {len(S.events)} event(s)")
-    c1, c2 = st.columns(2)
-    c1.button("New task", on_click=new_task, help="Archive the current task; the knowledge base is kept")
-    c2.button("Clear all", on_click=clear_all)
-    st.divider()
-    st.radio("AI engine", ["pi", "direct"], key="engine", horizontal=True,
-             help="pi: every call runs as a pi agent job. direct: plain Qwen API calls. pi falls back to direct on failure.")
-    if S.engine == "pi":
+def stage() -> str:
+    """The step shown in full; earlier steps collapse into one-line summaries. A wish that reopens questioning jumps back."""
+    if not S.analysis:
+        return "task"
+    if not S.clarified or not S.brief:
+        return "questions"
+    return "demo" if S.demo else "brief"
+
+
+def gen_brief(a: dict) -> bool:
+    with st.spinner("Turning it into a brief you can start on…"):
         try:
-            st.selectbox("Model", start_harness()["models"], key="pi_model")
+            S.brief, S.demo = write_brief(S.task, a, cast(), S.qa, S.remaining), None
+            S.history, S.brief_qa = list(S.qa), len(S.qa)
+            save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
+            for i, h in enumerate(filter(is_question, S.qa)):
+                save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A ({h['by']}, pre-work clarification round {h['round']}): {h['a']}")
+            log("Brief generated", S.brief["goal"])
+            return True
         except Exception as e:
-            st.caption(f"pi harness unavailable: {e}")
-    st.toggle("Offline demo mode", key="replay",
-              help="Prefer recorded answers, no network needed. Normal calls are recorded automatically; failed API calls also fall back to recordings.")
-    st.caption(f"{len(get_cache())} AI answer(s) recorded")
+            st.error(f"Call failed: {e}")
+            return False
 
-st.title("🧭 Requirement Clarifier")
-st.markdown(
-    '<div class="subtitle">One vague request → AI asks the key questions → brief + clickable demo → automatic answers while working → each project captured as one document</div>',
-    unsafe_allow_html=True,
-)
-render_steps()
 
-page = S.page
+def build_demo(feedback: str = "") -> bool:
+    with st.spinner("pi is building the prototype in its workspace…"):
+        try:
+            S.demo, S.demo_steps = make_demo(S.task, S.brief, S.history, feedback)
+            S.demo_ver += 1
+            save_doc(f"{S.task_id}-demo", "Demo", f"{S.task_title} · Requirement demo", S.demo)
+            if feedback:
+                S.history.append({"q": "Change requests for the requirement demo", "a": feedback, "by": S.acting or owner()})
+                save_doc(f"{S.task_id}-demofb-{S.demo_ver}", "Q&A", "Change requests for the requirement demo",
+                         f"A ({S.acting or owner()}, after seeing the demo): {feedback}")
+                log("Demo revised", feedback)
+            else:
+                log("Demo generated", "Generated an interactive prototype from the brief")
+            return True
+        except Exception as e:
+            st.error(f"Call failed: {e}")
+            return False
 
-if page == "Stakeholders":
-    st.subheader("1. Post a task")
+
+def task_step():
     c1, c2 = st.columns([4, 1])
     pick = c1.selectbox("Example scenario", ["Write my own"] + list(SCENARIOS), key="scenario_pick", label_visibility="collapsed")
     c2.button("Fill in example", disabled=pick not in SCENARIOS, use_container_width=True,
               on_click=fill_example, args=(pick,))
-    S.task = st.text_area("Describe what you need in plain language; the more casual the better", value=S.task, height=110)
-
+    S.task = st.text_area("What do you need? Plain words are fine.", value=S.task, height=110)
     if st.button("Let AI understand the task", type="primary", disabled=not S.task.strip()):
         with st.spinner("AI is breaking down the task and looking for ambiguities…"):
             try:
@@ -1040,233 +1040,266 @@ if page == "Stakeholders":
         if ok:
             st.rerun()  # Kept outside the try: st.rerun works by raising, so it must not be swallowed by except
 
-    a = S.analysis
-    if a:
-        st.subheader("2. AI's understanding")
-        st.info(a["understanding"])
+
+def task_summary(a: dict):
+    with st.expander(f"📝 Task: {S.task_title} · {len(cast())} stakeholders"):
+        st.markdown(f"> {S.task}")
         c1, c2 = st.columns(2)
-        with c1, st.container(border=True):
+        with c1:
             label("Initial breakdown")
             for i, t in enumerate(a["subtasks"], 1):
                 st.markdown(f"{i}. **{t['title']}**: {t['detail']}")
-        with c2, st.container(border=True):
+        with c2:
             label("Already clear")
             bullets(a["known"] or ["(nothing yet)"])
         if a["needs_meeting"]:
             st.warning(f"Suggest talking face to face: {a['meeting_reason']}")
-
-        with st.container(border=True):
-            label("Stakeholders · suggested by AI, edit freely; tick the owner")
-            edited = st.data_editor(
-                pd.DataFrame(S.cast_seed or cast(), columns=["name", "role", "cares", "owner"]),
-                key=f"sub_cast_{S.task_id}", num_rows="dynamic", hide_index=True, use_container_width=True,
-                column_config={
-                    "name": "Name",
-                    "role": "Role",
-                    "cares": st.column_config.TextColumn("Cares about", width="large"),
-                    "owner": st.column_config.CheckboxColumn("Owner"),
-                },
-            )
-            S.projects[S.task_project]["cast"] = clean_cast(edited.to_dict("records"), cast())
-
-        st.markdown(
-            f'### 3. AI\'s questions <span class="pill">Round {S.round} · keeps asking until the request is fully explained</span>',
-            unsafe_allow_html=True,
+        label("Stakeholders · edit freely; tick the owner")
+        edited = st.data_editor(
+            pd.DataFrame(S.cast_seed or cast(), columns=["name", "role", "cares", "owner"]),
+            key=f"sub_cast_{S.task_id}", num_rows="dynamic", hide_index=True, use_container_width=True,
+            column_config={
+                "name": "Name",
+                "role": "Role",
+                "cares": st.column_config.TextColumn("Cares about", width="large"),
+                "owner": st.column_config.CheckboxColumn("Owner"),
+            },
         )
-        if S.qa:
-            with st.expander(f"Answers and wishes so far ({len(S.qa)})"):
-                n = 0  # Question number; wishes and decisions are not numbered
-                for h in S.qa:
-                    if is_wish(h):
-                        st.markdown(f"💬 **{h['by']} wishes:** {h['a']}")
-                    elif h.get("kind") == "decision":
-                        st.markdown(f"⚖️ **{h['by']} settled** {h['q']}: {h['a']}")
-                    else:
-                        n += 1
-                        st.markdown(f"**Q{n}. {h['q']}**  \n{h['by']}: {h['a']}")
+        S.projects[S.task_project]["cast"] = clean_cast(edited.to_dict("records"), cast())
 
-        with st.container(border=True):
-            label(f"Anything else {S.acting} wants? Add a wish (any time)")
-            c1, c2 = st.columns([4, 1])
-            wish = c1.text_input("Wish", key=f"sub_wish_{S.wish_ver}", label_visibility="collapsed",
-                                 placeholder="e.g. It must work on my phone / It must cost nothing / Show who booked each slot")
-            if c2.button("Add wish", use_container_width=True) and wish.strip():
-                with st.spinner("AI is taking the new wish into account…"):
-                    try:
-                        add_wish(a, S.acting, wish.strip())
-                        ok = True
-                    except Exception as e:
-                        st.error(f"Call failed: {e}")
-                        ok = False
-                if ok:
-                    st.rerun()
-        if not S.clarified:
-            me, mine = S.acting, {}
-            for i, q in enumerate(a["questions"]):
-                to = route(q["to"])
-                with st.container(border=True):
-                    st.markdown(f'**Q{sum(map(is_question, S.qa)) + i + 1}. {q["question"]}** <span class="pill">for {htmllib.escape(to)}</span>',
-                                unsafe_allow_html=True)
-                    st.caption(f"Why ask: {q['why']}")
-                    done = S.round_ans.get(q["question"])
-                    if done:
-                        st.markdown(f"✅ **{done['by']}**: {done['a']}")
-                    elif to != me:
-                        st.button(f"Answer as {to} →", key=f"btn_as_{S.round}_{i}", on_click=act_as, args=(to,))
-                    else:
-                        choice = None
-                        if q["options"]:
-                            choice = st.radio("Pick one", q["options"] + ["Other / not sure"], key=f"opt_{S.round}_{i}", horizontal=True,
-                                              label_visibility="collapsed")
-                        text = st.text_input("Additional notes (optional)", key=f"ans_{S.round}_{i}", placeholder="Additional notes (optional)",
-                                             label_visibility="collapsed")
-                        if choice and choice != "Other / not sure":
-                            mine[q["question"]] = f"{choice}. {text}" if text else choice
-                        else:
-                            mine[q["question"]] = text or "Not sure, decide later"
 
-            picked = None
-            for j, c in enumerate(S.conflicts):
-                with st.container(border=True):
-                    st.markdown(f'**⚖️ Conflict: {c["topic"]}** <span class="pill">owner {htmllib.escape(owner())} decides</span>',
-                                unsafe_allow_html=True)
-                    for x in c["sides"]:
-                        st.markdown(f"- **{route(x['who'])}** wants: {x['wants']}")
-                    done = S.round_dec.get(c["topic"])
-                    if done:
-                        st.markdown(f"✅ **{owner()}** chose: {done}")
-                    elif me != owner():
-                        st.button(f"Answer as {owner()} →", key=f"btn_cas_{S.round}_{j}", on_click=act_as, args=(owner(),))
-                    else:
-                        for k, o in enumerate(c["options"]):
-                            l, r_ = st.columns([5, 1])
-                            l.markdown(f"**{o['label']}**{' · recommended' if k == 0 else ''}  \n<small>{htmllib.escape(o['tradeoff'])}</small>",
-                                       unsafe_allow_html=True)
-                            if r_.button("Choose", key=f"btn_pick_{S.round}_{j}_{k}", use_container_width=True):
-                                picked = (c["topic"], o["label"])
-                        own = st.text_input("Or decide in your own words", key=f"ans_c_{S.round}_{j}", placeholder="Or decide in your own words")
-                        if st.button("Decide", key=f"btn_own_{S.round}_{j}") and own.strip():
-                            picked = (c["topic"], own.strip())
-
-            c1, c2 = st.columns(2)
-            submit = c1.button(f"Submit {me}'s answers", type="primary", use_container_width=True, disabled=not mine)
-            stop = c2.button("Enough, write the brief", use_container_width=True, disabled=me != owner(),
-                             help=f"Only the owner ({owner()}) can stop the questioning; anything still unclear goes into the brief's open issues")
-            if submit or stop or picked:
-                if submit:
-                    S.round_ans.update({q: {"a": ans, "by": me} for q, ans in mine.items()})
-                if picked:
-                    S.round_dec[picked[0]] = picked[1]
-                waiting = round_waiting(a)
-                if waiting and not stop:
-                    st.toast(f"Saved. Still waiting for {', '.join(waiting)}")
-                    st.rerun()
-                with st.spinner("AI is checking what the answers still leave open…"):
-                    try:
-                        close_round(a, stop)
-                        ok = True
-                    except Exception as e:
-                        st.error(f"Call failed: {e}")
-                        ok = False
-                if ok:
-                    st.rerun()
-        else:
-            rounds = len({h["round"] for h in S.qa})
-            if S.stopped or S.remaining:
-                st.warning(f"Clarification stopped after {rounds} round(s); open items go into the brief")
-                bullets(S.remaining)
+def qa_summary():
+    if not S.qa:
+        return
+    nq, nw = sum(map(is_question, S.qa)), sum(map(is_wish, S.qa))
+    with st.expander(f"💬 Q&A: {nq} answer(s) · {nw} wish(es) · {len(S.qa) - nq - nw} conflict(s) settled"):
+        n = 0  # Question number; wishes and decisions are not numbered
+        for h in S.qa:
+            if is_wish(h):
+                st.markdown(f"💬 **{h['by']} wishes:** {h['a']}")
+            elif h.get("kind") == "decision":
+                st.markdown(f"⚖️ **{h['by']} settled** {h['q']}: {h['a']}")
             else:
-                st.success(f"Request fully explained: {len(S.qa)} answer(s) over {rounds} round(s)")
+                n += 1
+                st.markdown(f"**Q{n}. {h['q']}**  \n{h['by']}: {h['a']}")
 
-            if st.button("Regenerate task brief" if S.brief else "Generate task brief", type="primary"):
-                with st.spinner("Turning it into a brief you can start on…"):
-                    try:
-                        S.brief, S.demo = write_brief(S.task, a, cast(), S.qa, S.remaining), None
-                        S.history, S.brief_qa = list(S.qa), len(S.qa)
-                        save_doc(f"{S.task_id}-brief", "Brief", f"{S.task_title} · Task brief", brief_md(S.brief))
-                        for i, h in enumerate(filter(is_question, S.qa)):
-                            save_doc(f"{S.task_id}-clar-{i}", "Q&A", h["q"], f"A ({h['by']}, pre-work clarification round {h['round']}): {h['a']}")
-                        log("Brief generated", S.brief["goal"])
-                        ok = True
-                    except Exception as e:
-                        st.error(f"Call failed: {e}")
-                        ok = False
-                if ok:
-                    st.rerun()
 
-    if S.brief:
-        b = S.brief
-        st.subheader("4. Task brief")
-        if len(S.qa) > S.brief_qa:
-            st.warning("New answers or wishes since this brief was written; regenerate it in section 3 to include them")
-        m = st.columns(4)
-        m[0].metric("Questions clarified", sum(map(is_question, S.qa)))
-        m[1].metric("Decisions confirmed", len(b["decisions"]))
-        m[2].metric("Acceptance criteria", len(b["acceptance_criteria"]))
-        m[3].metric("Still undecided", len(b["open_issues"]))
-        left, right = st.columns([1, 2])
-        with left, st.container(border=True):
-            label("Before: the requester's one-liner")
-            st.markdown(f"> {S.task}")
-        with right, st.container(border=True):
-            label("After: a brief the worker can start on right away")
-            render_brief(b)
+def wish_box(a: dict):
+    c1, c2 = st.columns([5, 1])
+    wish = c1.text_input("Wish", key=f"sub_wish_{S.wish_ver}", label_visibility="collapsed",
+                         placeholder=f"💬 Anything else {S.acting} wants? e.g. It must work on my phone")
+    if c2.button("Add wish", use_container_width=True) and wish.strip():
+        with st.spinner("AI is taking the new wish into account…"):
+            try:
+                add_wish(a, S.acting, wish.strip())
+                ok = True
+            except Exception as e:
+                st.error(f"Call failed: {e}")
+                ok = False
+        if ok:
+            st.rerun()
 
-        st.markdown('### 5. Requirement demo <span class="pill">Take a look first: is this what you meant?</span>', unsafe_allow_html=True)
-        feedback = ""
-        if not S.demo:
-            st.caption("Generate a simple clickable prototype from your answers and the brief. Requesters spot \"that's not what I wanted\" faster from a picture than from text.")
-            gen = st.button("Generate requirement demo", type="primary")
+
+def option_labels(options: list) -> list:
+    """Strip the model's "(Recommended: ...)" notes and mark the recommended option (else the first) with a star instead."""
+    rec = next((i for i, o in enumerate(options) if re.search(r"(?<!not )recommended", o, re.I)), 0)
+    # Only parenthesized notes go, and "(not recommended)" stays: it's a warning worth keeping
+    clean = [re.sub(r"\s*[(\[][^)\]]*(?<!not )recommended[^)\]]*[)\]]", "", o, flags=re.I).strip() or o for o in options]
+    return [f"★ {o}" if i == rec else o for i, o in enumerate(clean)]
+
+
+def questions_step(a: dict):
+    st.info(a["understanding"])
+    qa_summary()
+    if S.clarified:
+        if S.stopped or S.remaining:
+            st.warning("Clarification stopped; these go into the brief as open issues")
+            bullets(S.remaining)
         else:
-            with st.container(border=True):
-                show_demo(S.demo)
-            if S.demo_steps:
-                st.caption(f"pi worked in workspaces/{workspace_name()}/: {steps_md(S.demo_steps)}")
-            c1, c2, c3 = st.columns([3, 1, 1])
-            feedback = c1.text_input("What's wrong?", key=f"demo_fb_{S.demo_ver}", label_visibility="collapsed",
-                                     placeholder="What's wrong? e.g. bigger buttons, and I need to see history")
-            gen = c2.button("Redo with feedback", disabled=not feedback.strip(), use_container_width=True)
-            c3.download_button("Download HTML", S.demo, file_name=f"{S.task_title or 'demo'}.html", mime="text/html",
-                               use_container_width=True)
-        if gen:
-            with st.spinner("pi is building the prototype in its workspace…"):
-                try:
-                    S.demo, S.demo_steps = make_demo(S.task, b, S.history, feedback.strip())
-                    S.demo_ver += 1
-                    save_doc(f"{S.task_id}-demo", "Demo", f"{S.task_title} · Requirement demo", S.demo)
-                    if feedback.strip():
-                        S.history.append({"q": "Change requests for the requirement demo", "a": feedback.strip(), "by": S.acting or owner()})
-                        save_doc(f"{S.task_id}-demofb-{S.demo_ver}", "Q&A", "Change requests for the requirement demo",
-                                 f"A ({S.acting or owner()}, after seeing the demo): {feedback.strip()}")
-                        log("Demo revised", feedback.strip())
-                    else:
-                        log("Demo generated", "Generated an interactive prototype from the brief")
-                    ok = True
-                except Exception as e:
-                    st.error(f"Call failed: {e}")
-                    ok = False
-            if ok:
+            st.success(f"Request fully explained: {len(S.qa)} answer(s) over {len({h['round'] for h in S.qa})} round(s)")
+        if st.button("Write the task brief", type="primary") and gen_brief(a):
+            st.rerun()
+        return
+
+    me, mine, picked = S.acting, {}, None
+    st.markdown(f"#### Round {S.round} · waiting for {', '.join(round_waiting(a))}")
+    for i, q in enumerate(a["questions"]):
+        to = route(q["to"])
+        with st.container(border=True):
+            st.markdown(f'**Q{sum(map(is_question, S.qa)) + i + 1}. {q["question"]}** <span class="pill">for {htmllib.escape(to)}</span>',
+                        unsafe_allow_html=True)
+            st.caption(q["why"])
+            done = S.round_ans.get(q["question"])
+            if done:
+                st.markdown(f"✅ **{done['by']}**: {done['a']}")
+            elif to != me:
+                st.button(f"Answer as {to} →", key=f"btn_as_{S.round}_{i}", on_click=act_as, args=(to,), type="tertiary")
+            else:
+                opts = option_labels(q["options"]) + ["Other…"]
+                choice = st.pills("Answer", opts, default=next((o for o in opts if o.startswith("★ ")), opts[0]),
+                                  key=f"opt_{S.round}_{i}", label_visibility="collapsed")
+                if choice == "Other…":
+                    text = st.text_input("Your answer", key=f"ans_{S.round}_{i}", label_visibility="collapsed",
+                                         placeholder="Your own answer (leave empty for 'not sure')")
+                    mine[q["question"]] = text.strip() or "Not sure, decide later"
+                elif choice:
+                    mine[q["question"]] = choice.removeprefix("★ ")
+
+    for j, c in enumerate(S.conflicts):
+        with st.container(border=True):
+            st.markdown(f'**⚖️ {c["topic"]}** <span class="pill">{htmllib.escape(owner())} decides</span>', unsafe_allow_html=True)
+            st.markdown(" · ".join(f"**{route(x['who'])}** wants {x['wants']}" for x in c["sides"]))
+            done = S.round_dec.get(c["topic"])
+            if done:
+                st.markdown(f"✅ **{owner()}** chose: {done}")
+            elif me != owner():
+                st.button(f"Answer as {owner()} →", key=f"btn_cas_{S.round}_{j}", on_click=act_as, args=(owner(),), type="tertiary")
+            else:
+                for k, (o, shown) in enumerate(zip(c["options"], option_labels([o["label"] for o in c["options"]]))):
+                    if st.button(shown, key=f"btn_pick_{S.round}_{j}_{k}", help=o["tradeoff"], use_container_width=True):
+                        picked = (c["topic"], shown.removeprefix("★ "))
+                with st.popover("Other…"):
+                    own = st.text_input("Decide in your own words", key=f"ans_c_{S.round}_{j}")
+                    if st.button("Decide", key=f"btn_own_{S.round}_{j}") and own.strip():
+                        picked = (c["topic"], own.strip())
+
+    c1, c2 = st.columns(2)
+    submit = c1.button(f"Submit {me}'s answers", type="primary", use_container_width=True, disabled=not mine)
+    stop = me == owner() and c2.button("Enough, write the brief", use_container_width=True,
+                                       help="Stop asking; anything still unclear goes into the brief's open issues")
+    if submit or stop or picked:
+        if submit:
+            S.round_ans.update({q: {"a": ans, "by": me} for q, ans in mine.items()})
+        if picked:
+            S.round_dec[picked[0]] = picked[1]
+        waiting = round_waiting(a)
+        if waiting and not stop:
+            st.toast(f"Saved. Still waiting for {', '.join(waiting)}")
+            st.rerun()
+        with st.spinner("AI is checking what the answers still leave open…"):
+            try:
+                close_round(a, stop)
+                ok = True
+            except Exception as e:
+                st.error(f"Call failed: {e}")
+                ok = False
+        if ok:
+            st.rerun()
+
+
+def brief_step(a: dict):
+    b = S.brief
+    if len(S.qa) > S.brief_qa:
+        c1, c2 = st.columns([4, 1])
+        c1.warning("New answers or wishes since this brief was written")
+        if c2.button("Rewrite brief", use_container_width=True) and gen_brief(a):
+            st.rerun()
+    nq, nw = sum(map(is_question, S.qa)), sum(map(is_wish, S.qa))
+    st.markdown(" ".join(f'<span class="pill">{t}</span>' for t in [
+        f"{nq} questions", f"{nw} wishes", f"{len(S.qa) - nq - nw} conflicts settled",
+        f"{len(b['decisions'])} decisions", f"{len(b['open_issues'])} still open"]), unsafe_allow_html=True)
+    left, right = st.columns([1, 2])
+    with left, st.container(border=True):
+        label("Before: the one-liner")
+        st.markdown(f"> {S.task}")
+    with right, st.container(border=True):
+        label("After: a brief the worker can start on")
+        render_brief(b)
+    if st.button("Build clickable demo", type="primary") and build_demo():
+        st.rerun()
+
+
+def demo_step(a: dict):
+    with st.expander("📋 Task brief"):
+        render_brief(S.brief)
+    with st.container(border=True):
+        show_demo(S.demo)
+    if S.demo_steps:
+        st.caption(f"pi worked in workspaces/{workspace_name()}/: {steps_md(S.demo_steps)}")
+    c1, c2, c3 = st.columns([3, 1, 1])
+    feedback = c1.text_input("What's wrong?", key=f"demo_fb_{S.demo_ver}", label_visibility="collapsed",
+                             placeholder=f"What should change, {S.acting}? e.g. bigger buttons, show history")
+    if c2.button("Redo with feedback", disabled=not feedback.strip(), use_container_width=True) and build_demo(feedback.strip()):
+        st.rerun()
+    c3.download_button("Download HTML", S.demo, file_name=f"{S.task_title or 'demo'}.html", mime="text/html",
+                       use_container_width=True)
+    st.button("Switch to worker view →", type="primary", on_click=goto, args=("Worker",))
+
+
+def pending_block():
+    """Worker questions forwarded to a stakeholder, shown first because someone is blocked on them."""
+    for i, q in enumerate(list(S.pending)):
+        to = route(S.pending_to.get(q, ""))
+        with st.container(border=True):
+            st.markdown(f'📨 **Worker asks:** {q} <span class="pill">for {htmllib.escape(to)}</span>', unsafe_allow_html=True)
+            if to != S.acting:
+                st.button(f"Answer as {to} →", key=f"btn_pas_{i}_{q}", on_click=act_as, args=(to,), type="tertiary")
+                continue
+            c1, c2 = st.columns([5, 1])
+            reply = c1.text_input("Your answer", key=f"pend_{i}_{q}", label_visibility="collapsed", placeholder="Your answer")
+            if c2.button("Answer", key=f"btn_{i}_{q}", use_container_width=True) and reply:
+                S.history.append({"q": q, "a": reply, "by": to})
+                save_doc(ask_key(q), "Q&A", q, f"A ({to}, asked during work): {reply}")
+                log("Stakeholder answered", f"{q} → {to}: {reply}")
+                S.chat.append({"role": "assistant", "content": f"{to} answered: **{q}**\n\n{reply}"})
+                S.pending.remove(q)
                 st.rerun()
 
-        st.button("Switch to worker view →", type="primary", on_click=goto, args=("Worker",))
 
-    if S.pending:
-        st.subheader("Worker's questions")
-        for i, q in enumerate(list(S.pending)):
-            to = route(S.pending_to.get(q, ""))
-            with st.container(border=True):
-                st.markdown(f'**{q}** <span class="pill">for {htmllib.escape(to)}</span>', unsafe_allow_html=True)
-                if to != S.acting:
-                    st.button(f"Answer as {to} →", key=f"btn_pas_{i}_{q}", on_click=act_as, args=(to,))
-                    continue
-                reply = st.text_input("Your answer", key=f"pend_{i}_{q}")
-                if st.button("Answer and record", key=f"btn_{i}_{q}") and reply:
-                    S.history.append({"q": q, "a": reply, "by": to})
-                    save_doc(ask_key(q), "Q&A", q, f"A ({to}, asked during work): {reply}")
-                    log("Stakeholder answered", f"{q} → {to}: {reply}")
-                    S.chat.append({"role": "assistant", "content": f"{to} answered: **{q}**\n\n{reply}"})
-                    S.pending.remove(q)
-                    st.rerun()
+# ---------- Pages ----------
+
+st.set_page_config(page_title="Requirement Clarifier", page_icon="🧭", layout="wide")
+st.markdown(CSS, unsafe_allow_html=True)
+
+with st.sidebar:
+    st.radio("View", PAGES, key="page")
+    st.text_input("Project", key="project", disabled=S.task_id is not None,
+                  help="New tasks go under this project; you can switch after starting a new task")
+    if S.page == "Stakeholders" and S.analysis:
+        names = [x["name"] for x in cast()]
+        S.acting = st.selectbox("Acting as", names, index=names.index(S.acting) if S.acting in names else 0,
+                                help=f"Answer as another stakeholder. The owner ({owner()}) settles conflicts.")
+    if S.pending and S.page != "Stakeholders":
+        st.warning(f"{len(S.pending)} worker question(s) waiting for stakeholders")
+    c1, c2 = st.columns(2)
+    c1.button("New task", on_click=new_task, use_container_width=True, help="Archive the current task; the knowledge base is kept")
+    c2.button("Clear all", on_click=clear_all, use_container_width=True)
+    if S.get("replay"):
+        st.caption("📼 Offline demo mode is on")
+    with st.expander("⚙️ Settings"):
+        st.radio("AI engine", ["pi", "direct"], key="engine", horizontal=True,
+                 help="pi: every call runs as a pi agent job. direct: plain Qwen API calls. pi falls back to direct on failure.")
+        if S.engine == "pi":
+            try:
+                st.selectbox("Model", start_harness()["models"], key="pi_model")
+            except Exception as e:
+                st.caption(f"pi harness unavailable: {e}")
+        st.toggle("Offline demo mode", key="replay",
+                  help="Prefer recorded answers, no network needed. Normal calls are recorded automatically; failed API calls also fall back to recordings.")
+        n_qa = sum(d["type"] == "Q&A" for d in S.docs)
+        st.caption(f"{len(get_cache())} AI answer(s) recorded · knowledge base: {len(S.projects)} project(s), {n_qa} Q&A")
+
+st.title("🧭 Requirement Clarifier")
+st.markdown('<div class="subtitle">A rough idea → AI grills every stakeholder → brief + clickable demo → answers while you work</div>',
+            unsafe_allow_html=True)
+render_steps()
+
+page = S.page
+
+if page == "Stakeholders":
+    pending_block()
+    step = stage()
+    if step == "task":
+        task_step()
+    else:
+        a = S.analysis
+        task_summary(a)
+        if step == "questions":
+            questions_step(a)
+        else:
+            qa_summary()
+            (brief_step if step == "brief" else demo_step)(a)
+        wish_box(a)
 
 elif page == "Worker":
     if not S.brief:
