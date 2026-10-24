@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tech Talk Sign-Up</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#1a1a2e;line-height:1.5}
+.container{max-width:640px;margin:0 auto;padding:20px}
+h1{font-size:1.5rem;margin-bottom:4px}
+.subtitle{color:#555;font-size:.9rem;margin-bottom:20px}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card h2{font-size:1.1rem;margin-bottom:12px}
+label{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px}
+input{width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:6px;font-size:.95rem;margin-bottom:12px}
+input:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 2px rgba(79,70,229,.15)}
+button{padding:10px 20px;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;transition:background .2s}
+.btn-primary{background:#4f46e5;color:#fff}.btn-primary:hover{background:#4338ca}
+.btn-secondary{background:#e0e7ff;color:#4f46e5}.btn-secondary:hover{background:#c7d2fe}
+.btn-outline{background:transparent;border:1px solid #d0d5dd;color:#555}.btn-outline:hover{background:#f9fafb}
+.msg{padding:10px 14px;border-radius:6px;font-size:.85rem;margin-bottom:12px;display:none}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.msg-info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.counter{font-size:.85rem;color:#6b7280;margin-bottom:12px}
+.counter strong{color:#4f46e5}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;color:#6b7280;font-weight:600}
+td{padding:8px;border-bottom:1px solid #f3f4f6}
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab{flex:1;padding:8px;text-align:center;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;background:#e0e7ff;color:#4f46e5;border:none}
+.tab.active{background:#4f46e5;color:#fff}
+.admin-toggle{font-size:.8rem;color:#9ca3af;cursor:pointer;text-decoration:underline;margin-top:8px;display:inline-block}
+#attendeeList,#adminPanel{display:none}
+.seats-bar{height:6px;background:#e5e7eb;border-radius:3px;margin-bottom:12px;overflow:hidden}
+.seats-fill{height:100%;background:#4f46e5;border-radius:3px;transition:width .3s}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Tech Talk Sign-Up</h1>
+<p class="subtitle">Next month · Limited to 100 seats</p>
+
+<div class="tabs">
+<button class="tab active" onclick="showTab('signup')">Sign Up</button>
+<button class="tab" onclick="showTab('attendees')">Attendee List</button>
+</div>
+
+<!-- SIGN UP TAB -->
+<div id="signupTab">
+<div class="card" id="signupCard">
+<h2>Register</h2>
+<div class="seats-bar"><div class="seats-fill" id="seatsBar"></div></div>
+<p class="counter"><strong id="seatCount">0</strong> / 100 seats filled</p>
+<div id="formMsg" class="msg"></div>
+<form id="signupForm">
+<label for="name">Name *</label>
+<input type="text" id="name" required placeholder="Your full name">
+<label for="email">Email *</label>
+<input type="email" id="email" required placeholder="you@example.com">
+<button type="submit" class="btn-primary" id="submitBtn">Sign Up</button>
+</form>
+</div>
+
+<div class="card" id="waitlistCard" style="display:none">
+<h2>All Seats Full — Join Waitlist</h2>
+<p class="msg msg-info" style="display:block">All 100 seats are taken. Enter your email to be waitlisted.</p>
+<div id="wlMsg" class="msg"></div>
+<form id="waitlistForm">
+<label for="wlEmail">Email *</label>
+<input type="email" id="wlEmail" required placeholder="you@example.com">
+<button type="submit" class="btn-secondary">Join Waitlist</button>
+</form>
+</div>
+</div>
+
+<!-- ATTENDEE LIST TAB -->
+<div id="attendeeList">
+<div class="card">
+<h2>Public Attendee List</h2>
+<p class="counter" id="listCount">0 registered</p>
+<table>
+<thead><tr><th>#</th><th>Name</th><th>Email</th></tr></thead>
+<tbody id="attendeeBody"></tbody>
+</table>
+</div>
+<span class="admin-toggle" onclick="toggleAdmin()">Admin tools</span>
+<div class="card" id="adminPanel">
+<h2>Admin Export</h2>
+<p class="counter" id="exportCount">0 attendees ready to export</p>
+<button class="btn-outline" onclick="exportCSV()">⬇ Download CSV</button>
+</div>
+</div>
+</div>
+
+<script>
+const CAPACITY=100;
+let attendees=[];
+let waitlist=[];
+
+// Seed fake data
+for(let i=1;i<=42;i++){
+  attendees.push({name:`Attendee ${i}`,email:`user${i}@example.com`});
+}
+
+function updateUI(){
+  const n=attendees.length;
+  document.getElementById('seatCount').textContent=n;
+  document.getElementById('seatsBar').style.width=(n/CAPACITY*100)+'%';
+  document.getElementById('listCount').textContent=n+' registered';
+  document.getElementById('exportCount').textContent=n+' attendees ready to export';
+  const full=n>=CAPACITY;
+  document.getElementById('signupCard').style.display=full?'none':'block';
+  document.getElementById('waitlistCard').style.display=full?'block':'none';
+  renderTable();
+}
+
+function renderTable(){
+  const tb=document.getElementById('attendeeBody');
+  tb.innerHTML='';
+  attendees.forEach((a,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${i+1}</td><td>${esc(a.name)}</td><td>${esc(a.email)}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+function showMsg(id,text,type){
+  const el=document.getElementById(id);
+  el.className='msg msg-'+type;el.textContent=text;el.style.display='block';
+  setTimeout(()=>el.style.display='none',4000);
+}
+
+document.getElementById('signupForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  if(attendees.length>=CAPACITY){showMsg('formMsg','Seats are full.','error');return;}
+  const name=document.getElementById('name').value.trim();
+  const email=document.getElementById('email').value.trim();
+  if(!name||!email){showMsg('formMsg','Name and email required.','error');return;}
+  if(attendees.some(a=>a.email.toLowerCase()===email.toLowerCase())){showMsg('formMsg','Already registered.','error');return;}
+  attendees.push({name,email});
+  document.getElementById('signupForm').reset();
+  showMsg('formMsg','You\'re registered!','success');
+  updateUI();
+});
+
+document.getElementById('waitlistForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  const email=document.getElementById('wlEmail').value.trim();
+  if(!email){showMsg('wlMsg','Email required.','error');return;}
+  if(waitlist.includes(email.toLowerCase())){showMsg('wlMsg','Already on waitlist.','error');return;}
+  waitlist.push(email.toLowerCase());
+  document.getElementById('waitlistForm').reset();
+  showMsg('wlMsg','Added to waitlist!','success');
+});
+
+function showTab(t){
+  document.querySelectorAll('.tab').forEach((el,i)=>{
+    el.classList.toggle('active',i===(t==='signup'?0:1));
+  });
+  document.getElementById('signupTab').style.display=t==='signup'?'block':'none';
+  document.getElementById('attendeeList').style.display=t==='attendees'?'block':'none';
+  if(t==='attendees')renderTable();
+}
+
+function toggleAdmin(){
+  const p=document.getElementById('adminPanel');
+  p.style.display=p.style.display==='block'?'none':'block';
+}
+
+function exportCSV(){
+  let csv='Name,Email\n';
+  attendees.forEach(a=>{csv+=`"${a.name.replace(/"/g,'""')}","${a.email}"\n`;});
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='tech-talk-attendees.csv';a.click();
+  URL.revokeObjectURL(url);
+}
+
+updateUI();
+</script>
+
+<details style="margin-top:20px;font-size:.75rem;color:#6b7280;padding:8px 0">
+<summary>Built from your answers</summary>
+<ul style="padding-left:18px;margin-top:8px;line-height:1.8">
+<li>100-seat capacity with progress bar — Q1 Requester</li>
+<li>Name + email fields only — Q4 Requester</li>
+<li>Auto-close signup at capacity, show waitlist form — Q6 Requester</li>
+<li>Public attendee list tab — Q2 Requester</li>
+<li>Admin CSV download button — Q5 Admin</li>
+<li>Hosted inline (no external deps) — Q3 Requester</li>
+</ul>
+</details>
+</body>
+</html>

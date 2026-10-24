@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bookkeeping Calculator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f4f5f7;
+    --calc-bg: #ffffff;
+    --tape-bg: #f9fafb;
+    --tape-border: #e2e5ea;
+    --btn-num-bg: #ffffff;
+    --btn-num-hover: #f0f1f3;
+    --btn-num-active: #e0e2e6;
+    --btn-op-bg: #e8f0fe;
+    --btn-op-hover: #d4e4fc;
+    --btn-op-active: #c0d8fa;
+    --btn-eq-bg: #2563eb;
+    --btn-eq-hover: #1d4ed8;
+    --btn-eq-active: #1e40af;
+    --btn-clear-bg: #fef2f2;
+    --btn-clear-hover: #fee2e2;
+    --btn-clear-active: #fecaca;
+    --text-primary: #1a1d23;
+    --text-secondary: #6b7280;
+    --text-result: #2563eb;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+    --radius: 14px;
+    --btn-radius: 12px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .calculator {
+    background: var(--calc-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    width: 100%;
+    max-width: 400px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 520px;
+  }
+
+  /* --- Running Tape --- */
+  .tape-container {
+    background: var(--tape-bg);
+    border-bottom: 1px solid var(--tape-border);
+    padding: 12px 16px;
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: 200px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tape-container::-webkit-scrollbar { width: 4px; }
+  .tape-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+  .tape-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    position: sticky;
+    top: 0;
+    background: var(--tape-bg);
+    padding-bottom: 4px;
+  }
+
+  .tape-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 5px 0;
+    font-size: 15px;
+    border-bottom: 1px dashed #e8eaed;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .tape-entry:last-child { border-bottom: none; }
+
+  .tape-entry .expr { color: var(--text-secondary); font-size: 13px; }
+  .tape-entry .result { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .tape-entry.running-total .result { color: var(--text-result); font-weight: 700; }
+
+  .tape-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 0;
+    font-style: italic;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* --- Display --- */
+  .display {
+    padding: 16px 20px 12px;
+    text-align: right;
+    background: var(--calc-bg);
+  }
+
+  .display-expression {
+    font-size: 14px;
+    color: var(--text-secondary);
+    min-height: 20px;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .display-current {
+    font-size: 36px;
+    font-weight: 300;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    word-break: break-all;
+  }
+
+  /* --- Buttons Grid --- */
+  .buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 12px 16px 20px;
+    background: var(--calc-bg);
+  }
+
+  .btn {
+    height: 58px;
+    border: none;
+    border-radius: var(--btn-radius);
+    font-size: 22px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, transform 0.08s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    box-shadow: var(--shadow-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn:active { transform: scale(0.95); }
+
+  .btn-num {
+    background: var(--btn-num-bg);
+    color: var(--text-primary);
+  }
+  .btn-num:hover { background: var(--btn-num-hover); }
+  .btn-num:active { background: var(--btn-num-active); }
+
+  .btn-op {
+    background: var(--btn-op-bg);
+    color: var(--text-result);
+    font-weight: 600;
+  }
+  .btn-op:hover { background: var(--btn-op-hover); }
+  .btn-op:active { background: var(--btn-op-active); }
+  .btn-op.active {
+    background: var(--btn-eq-bg);
+    color: #fff;
+  }
+
+  .btn-eq {
+    background: var(--btn-eq-bg);
+    color: #fff;
+    font-weight: 700;
+  }
+  .btn-eq:hover { background: var(--btn-eq-hover); }
+  .btn-eq:active { background: var(--btn-eq-active); }
+
+  .btn-clear {
+    background: var(--btn-clear-bg);
+    color: #dc2626;
+    font-weight: 600;
+    font-size: 18px;
+  }
+  .btn-clear:hover { background: var(--btn-clear-hover); }
+  .btn-clear:active { background: var(--btn-clear-active); }
+
+  .btn-zero { grid-column: span 2; }
+
+  /* --- Details Section --- */
+  .source-details {
+    margin-top: 12px;
+    max-width: 400px;
+    width: 100%;
+  }
+  .source-details summary {
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: center;
+    padding: 8px;
+  }
+  .source-details .mapping {
+    background: var(--calc-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 12px 16px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+  .source-details .mapping strong { color: var(--text-primary); }
+
+  @media (max-width: 360px) {
+    .btn { height: 52px; font-size: 20px; }
+    .display-current { font-size: 30px; }
+    .buttons { gap: 8px; padding: 10px 12px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div style="display:flex;flex-direction:column;align-items:center;width:100%;">
+  <div class="calculator" id="calculator">
+    <!-- Running Tape -->
+    <div class="tape-container" id="tape">
+      <div class="tape-label">Running Tape</div>
+      <div id="tape-content">
+        <div class="tape-empty">No calculations yet</div>
+      </div>
+    </div>
+
+    <!-- Display -->
+    <div class="display">
+      <div class="display-expression" id="expression"></div>
+      <div class="display-current" id="current">0</div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="buttons">
+      <button class="btn btn-clear" data-action="clear">AC</button>
+      <button class="btn btn-clear" data-action="backspace">⌫</button>
+      <button class="btn btn-op" data-action="sign">+/−</button>
+      <button class="btn btn-op" data-action="operator" data-value="+">+</button>
+
+      <button class="btn btn-num" data-action="digit" data-value="7">7</button>
+      <button class="btn btn-num" data-action="digit" data-value="8">8</button>
+      <button class="btn btn-num" data-action="digit" data-value="9">9</button>
+      <button class="btn btn-op" data-action="operator" data-value="-">−</button>
+
+      <button class="btn btn-num" data-action="digit" data-value="4">4</button>
+      <button class="btn btn-num" data-action="digit" data-value="5">5</button>
+      <button class="btn btn-num" data-action="digit" data-value="6">6</button>
+      <button class="btn btn-eq" data-action="equals" style="grid-row: span 2;">=</button>
+
+      <button class="btn btn-num" data-action="digit" data-value="1">1</button>
+      <button class="btn btn-num" data-action="digit" data-value="2">2</button>
+      <button class="btn btn-num" data-action="digit" data-value="3">3</button>
+
+      <button class="btn btn-num btn-zero" data-action="digit" data-value="0">0</button>
+      <button class="btn btn-num" data-action="decimal">.</button>
+    </div>
+  </div>
+
+  <!-- Source Mapping -->
+  <details class="source-details">
+    <summary>Built from your answers</summary>
+    <div class="mapping">
+      <strong>Running tape (scrollable history):</strong> Q1 (Requester) — running tape/history of calculations; Q5 (Requester) — scrollable list showing each step<br>
+      <strong>Addition (+) button:</strong> Q4 (Requester) — addition/subtraction only<br>
+      <strong>Subtraction (−) button:</strong> Q4 (Requester) — addition/subtraction only<br>
+      <strong>+/− sign toggle:</strong> Q4 (Requester) — supports subtraction via negative numbers<br>
+      <strong>Large touch-friendly buttons (58px):</strong> Q6 (Requester) — larger buttons/easier tapping<br>
+      <strong>Web app format:</strong> Q2 (Requester) — web app; Q3 (Requester) — working calculator with real logic<br>
+      <strong>No × or ÷ buttons:</strong> Q4 (Requester) — addition/subtraction only (out of scope confirmed in brief)<br>
+      <strong>No export/share buttons:</strong> Out of scope per task brief<br>
+      <strong>AC / Backspace:</strong> Core calculator usability for working logic (Q3)
+    </div>
+  </details>
+</div>
+
+<script>
+(function() {
+  // State
+  let currentInput = '0';
+  let previousValue = null;
+  let operator = null;
+  let awaitingNextInput = false;
+  let expressionText = '';
+
+  // DOM refs
+  const currentDisplay = document.getElementById('current');
+  const expressionDisplay = document.getElementById('expression');
+  const tapeContent = document.getElementById('tape-content');
+  const tapeContainer = document.getElementById('tape');
+  let tapeHasEntries = false;
+
+  function updateDisplay() {
+    currentDisplay.textContent = formatNumber(currentInput);
+    expressionDisplay.textContent = expressionText;
+
+    // Highlight active operator
+    document.querySelectorAll('.btn-op[data-action="operator"]').forEach(btn => {
+      btn.classList.toggle('active', operator === btn.dataset.value && awaitingNextInput);
+    });
+  }
+
+  function formatNumber(val) {
+    if (val === '-') return '-';
+    if (val.includes('.') && val.endsWith('.')) return val;
+    if (val.includes('.') && val.endsWith('0') && !awaitingNextInput) {
+      // Preserve trailing zeros during input
+    }
+    const num = parseFloat(val);
+    if (isNaN(num)) return '0';
+    // Format with commas for readability
+    const parts = val.split('.');
+    parts[0] = parseInt(parts[0]).toLocaleString('en-US');
+    return parts.join('.');
+  }
+
+  function addTapeEntry(expr, result, isRunningTotal) {
+    if (!tapeHasEntries) {
+      tapeContent.innerHTML = '';
+      tapeHasEntries = true;
+    }
+    const entry = document.createElement('div');
+    entry.className = 'tape-entry' + (isRunningTotal ? ' running-total' : '');
+    entry.innerHTML = '<span class="expr">' + escapeHtml(expr) + '</span><span class="result">' + formatNumber(String(result)) + '</span>';
+    tapeContent.appendChild(entry);
+    // Auto-scroll to bottom
+    requestAnimationFrame(() => {
+      tapeContainer.scrollTop = tapeContainer.scrollHeight;
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function calculate(a, op, b) {
+    const numA = parseFloat(a);
+    const numB = parseFloat(b);
+    if (op === '+') return numA + numB;
+    if (op === '-') return numA - numB;
+    return numB;
+  }
+
+  function handleDigit(digit) {
+    if (awaitingNextInput) {
+      currentInput = digit;
+      awaitingNextInput = false;
+    } else {
+      if (currentInput === '0' && digit !== '0') {
+        currentInput = digit;
+      } else if (currentInput === '0' && digit === '0') {
+        // no-op
+      } else if (currentInput.replace(/[^0-9]/g, '').length < 12) {
+        currentInput += digit;
+      }
+    }
+    updateDisplay();
+  }
+
+  function handleDecimal() {
+    if (awaitingNextInput) {
+      currentInput = '0.';
+      awaitingNextInput = false;
+    } else if (!currentInput.includes('.')) {
+      currentInput += '.';
+    }
+    updateDisplay();
+  }
+
+  function handleOperator(op) {
+    if (operator && !awaitingNextInput && previousValue !== null) {
+      // Chain calculation
+      const result = calculate(previousValue, operator, currentInput);
+      const resultStr = String(parseFloat(result.toFixed(10)));
+      const expr = formatNumber(String(previousValue)) + ' ' + (operator === '+' ? '+' : '−') + ' ' + formatNumber(currentInput);
+      addTapeEntry(expr, resultStr, false);
+      previousValue = resultStr;
+      currentInput = resultStr;
+      expressionText = formatNumber(resultStr) + ' ' + (op === '+' ? '+' : '−');
+    } else {
+      previousValue = currentInput;
+      expressionText = formatNumber(currentInput) + ' ' + (op === '+' ? '+' : '−');
+    }
+    operator = op;
+    awaitingNextInput = true;
+    updateDisplay();
+  }
+
+  function handleEquals() {
+    if (operator === null || previousValue === null) return;
+
+    const result = calculate(previousValue, operator, currentInput);
+    const resultStr = String(parseFloat(result.toFixed(10)));
+    const opSymbol = operator === '+' ? '+' : '−';
+    const expr = formatNumber(String(previousValue)) + ' ' + opSymbol + ' ' + formatNumber(currentInput);
+
+    addTapeEntry(expr, resultStr, false);
+    addTapeEntry('Total', resultStr, true);
+
+    currentInput = resultStr;
+    expressionText = '';
+    previousValue = null;
+    operator = null;
+    awaitingNextInput = true;
+    updateDisplay();
+  }
+
+  function handleClear() {
+    currentInput = '0';
+    previousValue = null;
+    operator = null;
+    awaitingNextInput = false;
+    expressionText = '';
+    updateDisplay();
+  }
+
+  function handleBackspace() {
+    if (awaitingNextInput) return;
+    if (currentInput.length <= 1 || (currentInput.length === 2 && currentInput.startsWith('-'))) {
+      currentInput = '0';
+    } else {
+      currentInput = currentInput.slice(0, -1);
+    }
+    updateDisplay();
+  }
+
+  function handleSign() {
+    if (currentInput === '0') return;
+    if (currentInput.startsWith('-')) {
+      currentInput = currentInput.slice(1);
+    } else {
+      currentInput = '-' + currentInput;
+    }
+    updateDisplay();
+  }
+
+  // Button click handler
+  document.querySelector('.buttons').addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    switch (action) {
+      case 'digit': handleDigit(btn.dataset.value); break;
+      case 'decimal': handleDecimal(); break;
+      case 'operator': handleOperator(btn.dataset.value); break;
+      case 'equals': handleEquals(); break;
+      case 'clear': handleClear(); break;
+      case 'backspace': handleBackspace(); break;
+      case 'sign': handleSign(); break;
+    }
+  });
+
+  // Keyboard support
+  document.addEventListener('keydown', function(e) {
+    if (e.key >= '0' && e.key <= '9') handleDigit(e.key);
+    else if (e.key === '.') handleDecimal();
+    else if (e.key === '+') handleOperator('+');
+    else if (e.key === '-') handleOperator('-');
+    else if (e.key === 'Enter' || e.key === '=') { e.preventDefault(); handleEquals(); }
+    else if (e.key === 'Backspace') handleBackspace();
+    else if (e.key === 'Escape') handleClear();
+  });
+
+  updateDisplay();
+})();
+</script>
+</body>
+</html>

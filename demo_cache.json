@@ -1110,5 +1110,522 @@
     }
    }
   ]
+ },
+ "abf53c2abeb3e1e804d0f9d69f3d0a4171fa56b5": {
+  "title": "Tech Talk Signup Page",
+  "understanding": "Build signup page with auto-close and attendee list.",
+  "deadline": "2026-11-24",
+  "subtasks": [
+   {
+    "title": "Design signup form",
+    "detail": "Create fields and validation logic"
+   },
+   {
+    "title": "Implement capacity limit",
+    "detail": "Auto-disable form when seats full"
+   },
+   {
+    "title": "Build attendee dashboard",
+    "detail": "View registered attendees securely"
+   },
+   {
+    "title": "Deploy and test",
+    "detail": "Launch page before event date"
+   }
+  ],
+  "known": [
+   "Event next month",
+   "Seats are limited",
+   "Auto-close required",
+   "Attendee list needed"
+  ],
+  "questions": [
+   {
+    "question": "What is the exact seat capacity?",
+    "to": "Requester",
+    "why": "Cannot implement auto-close without limit",
+    "options": [
+     "50 seats",
+     "100 seats",
+     "200 seats",
+     "Custom number"
+    ]
+   },
+   {
+    "question": "Who can view the attendee list?",
+    "to": "Requester",
+    "why": "Determines auth and privacy requirements",
+    "options": [
+     "Admins only",
+     "All attendees",
+     "Public view",
+     "Specific team"
+    ]
+   },
+   {
+    "question": "Which platform hosts the page?",
+    "to": "Requester",
+    "why": "Affects tech stack and deployment timeline",
+    "options": [
+     "Company website",
+     "Standalone site",
+     "Event platform",
+     "Internal portal"
+    ]
+   }
+  ],
+  "needs_meeting": false,
+  "meeting_reason": "Requirements clear, no conflicts identified",
+  "stakeholders": [
+   {
+    "name": "Requester",
+    "role": "Event Organizer",
+    "cares": "Smooth registration process"
+   },
+   {
+    "name": "Attendees",
+    "role": "Participants",
+    "cares": "Easy signup experience"
+   },
+   {
+    "name": "Admin",
+    "role": "List Manager",
+    "cares": "Access attendee data"
+   }
+  ]
+ },
+ "282961667f19a82ace77d65d32c5b0d5114876c6": {
+  "understanding": "Build 100-seat signup page on company site with public attendee list.",
+  "complete": false,
+  "remaining": [
+   "Default: email-only signup fields",
+   "Default: simple CSV export format"
+  ],
+  "questions": [
+   {
+    "question": "Which fields are required for signup?",
+    "to": "Requester",
+    "why": "Wrong fields block registration or miss data",
+    "options": [
+     "Email only",
+     "Name and email",
+     "Name, email, company"
+    ]
+   },
+   {
+    "question": "How should Admin export the attendee list?",
+    "to": "Admin",
+    "why": "No export means manual copy-paste work",
+    "options": [
+     "CSV download",
+     "Google Sheet sync",
+     "View only in browser"
+    ]
+   },
+   {
+    "question": "What happens when seats fill up?",
+    "to": "Requester",
+    "why": "Bad UX if full state is unclear",
+    "options": [
+     "Show waitlist form",
+     "Disable button only",
+     "Hide page entirely"
+    ]
+   }
+  ],
+  "conflicts": []
+ },
+ "ea382bf05835491d7117361312911d4ea3366411": {
+  "understanding": "Build 100-seat signup page with waitlist and CSV export.",
+  "complete": false,
+  "remaining": [
+   "Waitlist limit: default unlimited",
+   "Email confirmation: default yes"
+  ],
+  "questions": [
+   {
+    "question": "Max waitlist size before closing signups entirely?",
+    "to": "Requester",
+    "why": "Unbounded waitlists create false hope and admin burden",
+    "options": [
+     "Unlimited",
+     "50 people",
+     "20 people"
+    ]
+   },
+   {
+    "question": "Send email confirmation after signup?",
+    "to": "Requester",
+    "why": "Attendees need proof; prevents duplicate registrations",
+    "options": [
+     "Yes, auto-send",
+     "No confirmation"
+    ]
+   },
+   {
+    "question": "Show attendee names or just count publicly?",
+    "to": "Requester",
+    "why": "Privacy risk if full names visible to all",
+    "options": [
+     "Names and emails",
+     "Names only",
+     "Count only"
+    ]
+   }
+  ],
+  "conflicts": []
+ },
+ "03ce6c7657bbadee504e417ab22209758cd6c678": {
+  "goal": "Build 100-seat signup page with waitlist and CSV export",
+  "in_scope": [
+   "100 seat capacity limit",
+   "Name and email fields",
+   "Waitlist form when full",
+   "CSV attendee export",
+   "Public attendee list view"
+  ],
+  "out_of_scope": [
+   "Payment processing",
+   "Calendar integration",
+   "Custom email templates",
+   "Mobile app"
+  ],
+  "acceptance_criteria": [
+   "Registration closes at 100 seats",
+   "Waitlist appears when full",
+   "Admin downloads CSV successfully",
+   "Attendees view public list",
+   "Only name/email collected"
+  ],
+  "subtasks": [
+   {
+    "title": "Build signup form",
+    "detail": "Create name/email form with validation"
+   },
+   {
+    "title": "Implement capacity logic",
+    "detail": "Auto-close at 100, show waitlist"
+   },
+   {
+    "title": "Create attendee list view",
+    "detail": "Public page showing all registrants"
+   },
+   {
+    "title": "Build CSV export",
+    "detail": "Admin button to download attendee data"
+   },
+   {
+    "title": "Add waitlist functionality",
+    "detail": "Form captures emails after capacity reached"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "100 seat capacity",
+    "source": "Q1 Requester"
+   },
+   {
+    "decision": "Public attendee list",
+    "source": "Q2 Requester"
+   },
+   {
+    "decision": "Host on company website",
+    "source": "Q3 Requester"
+   },
+   {
+    "decision": "Collect name and email only",
+    "source": "Q4 Requester"
+   },
+   {
+    "decision": "CSV export for admin",
+    "source": "Q5 Admin"
+   },
+   {
+    "decision": "Waitlist when full",
+    "source": "Q6 Requester"
+   }
+  ],
+  "open_issues": [
+   "Max waitlist size undefined",
+   "Email confirmation unconfirmed",
+   "Public name vs count unclear"
+  ]
+ },
+ "b5d34d23d2c68eab1a4453122a101dc9aea39e8d": {
+  "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Tech Talk Sign-Up</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#1a1a2e;line-height:1.5}\n.container{max-width:640px;margin:0 auto;padding:20px}\nh1{font-size:1.5rem;margin-bottom:4px}\n.subtitle{color:#555;font-size:.9rem;margin-bottom:20px}\n.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}\n.card h2{font-size:1.1rem;margin-bottom:12px}\nlabel{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px}\ninput{width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:6px;font-size:.95rem;margin-bottom:12px}\ninput:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 2px rgba(79,70,229,.15)}\nbutton{padding:10px 20px;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;transition:background .2s}\n.btn-primary{background:#4f46e5;color:#fff}.btn-primary:hover{background:#4338ca}\n.btn-secondary{background:#e0e7ff;color:#4f46e5}.btn-secondary:hover{background:#c7d2fe}\n.btn-outline{background:transparent;border:1px solid #d0d5dd;color:#555}.btn-outline:hover{background:#f9fafb}\n.msg{padding:10px 14px;border-radius:6px;font-size:.85rem;margin-bottom:12px;display:none}\n.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}\n.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}\n.msg-info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}\n.counter{font-size:.85rem;color:#6b7280;margin-bottom:12px}\n.counter strong{color:#4f46e5}\ntable{width:100%;border-collapse:collapse;font-size:.85rem}\nth{text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;color:#6b7280;font-weight:600}\ntd{padding:8px;border-bottom:1px solid #f3f4f6}\n.tabs{display:flex;gap:4px;margin-bottom:16px}\n.tab{flex:1;padding:8px;text-align:center;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;background:#e0e7ff;color:#4f46e5;border:none}\n.tab.active{background:#4f46e5;color:#fff}\n.admin-toggle{font-size:.8rem;color:#9ca3af;cursor:pointer;text-decoration:underline;margin-top:8px;display:inline-block}\n#attendeeList,#adminPanel{display:none}\n.seats-bar{height:6px;background:#e5e7eb;border-radius:3px;margin-bottom:12px;overflow:hidden}\n.seats-fill{height:100%;background:#4f46e5;border-radius:3px;transition:width .3s}\n</style>\n</head>\n<body>\n<div class=\"container\">\n<h1>Tech Talk Sign-Up</h1>\n<p class=\"subtitle\">Next month · Limited to 100 seats</p>\n\n<div class=\"tabs\">\n<button class=\"tab active\" onclick=\"showTab('signup')\">Sign Up</button>\n<button class=\"tab\" onclick=\"showTab('attendees')\">Attendee List</button>\n</div>\n\n<!-- SIGN UP TAB -->\n<div id=\"signupTab\">\n<div class=\"card\" id=\"signupCard\">\n<h2>Register</h2>\n<div class=\"seats-bar\"><div class=\"seats-fill\" id=\"seatsBar\"></div></div>\n<p class=\"counter\"><strong id=\"seatCount\">0</strong> / 100 seats filled</p>\n<div id=\"formMsg\" class=\"msg\"></div>\n<form id=\"signupForm\">\n<label for=\"name\">Name *</label>\n<input type=\"text\" id=\"name\" required placeholder=\"Your full name\">\n<label for=\"email\">Email *</label>\n<input type=\"email\" id=\"email\" required placeholder=\"you@example.com\">\n<button type=\"submit\" class=\"btn-primary\" id=\"submitBtn\">Sign Up</button>\n</form>\n</div>\n\n<div class=\"card\" id=\"waitlistCard\" style=\"display:none\">\n<h2>All Seats Full — Join Waitlist</h2>\n<p class=\"msg msg-info\" style=\"display:block\">All 100 seats are taken. Enter your email to be waitlisted.</p>\n<div id=\"wlMsg\" class=\"msg\"></div>\n<form id=\"waitlistForm\">\n<label for=\"wlEmail\">Email *</label>\n<input type=\"email\" id=\"wlEmail\" required placeholder=\"you@example.com\">\n<button type=\"submit\" class=\"btn-secondary\">Join Waitlist</button>\n</form>\n</div>\n</div>\n\n<!-- ATTENDEE LIST TAB -->\n<div id=\"attendeeList\">\n<div class=\"card\">\n<h2>Public Attendee List</h2>\n<p class=\"counter\" id=\"listCount\">0 registered</p>\n<table>\n<thead><tr><th>#</th><th>Name</th><th>Email</th></tr></thead>\n<tbody id=\"attendeeBody\"></tbody>\n</table>\n</div>\n<span class=\"admin-toggle\" onclick=\"toggleAdmin()\">Admin tools</span>\n<div class=\"card\" id=\"adminPanel\">\n<h2>Admin Export</h2>\n<p class=\"counter\" id=\"exportCount\">0 attendees ready to export</p>\n<button class=\"btn-outline\" onclick=\"exportCSV()\">⬇ Download CSV</button>\n</div>\n</div>\n</div>\n\n<script>\nconst CAPACITY=100;\nlet attendees=[];\nlet waitlist=[];\n\n// Seed fake data\nfor(let i=1;i<=42;i++){\n  attendees.push({name:`Attendee ${i}`,email:`user${i}@example.com`});\n}\n\nfunction updateUI(){\n  const n=attendees.length;\n  document.getElementById('seatCount').textContent=n;\n  document.getElementById('seatsBar').style.width=(n/CAPACITY*100)+'%';\n  document.getElementById('listCount').textContent=n+' registered';\n  document.getElementById('exportCount').textContent=n+' attendees ready to export';\n  const full=n>=CAPACITY;\n  document.getElementById('signupCard').style.display=full?'none':'block';\n  document.getElementById('waitlistCard').style.display=full?'block':'none';\n  renderTable();\n}\n\nfunction renderTable(){\n  const tb=document.getElementById('attendeeBody');\n  tb.innerHTML='';\n  attendees.forEach((a,i)=>{\n    const tr=document.createElement('tr');\n    tr.innerHTML=`<td>${i+1}</td><td>${esc(a.name)}</td><td>${esc(a.email)}</td>`;\n    tb.appendChild(tr);\n  });\n}\n\nfunction esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}\n\nfunction showMsg(id,text,type){\n  const el=document.getElementById(id);\n  el.className='msg msg-'+type;el.textContent=text;el.style.display='block';\n  setTimeout(()=>el.style.display='none',4000);\n}\n\ndocument.getElementById('signupForm').addEventListener('submit',function(e){\n  e.preventDefault();\n  if(attendees.length>=CAPACITY){showMsg('formMsg','Seats are full.','error');return;}\n  const name=document.getElementById('name').value.trim();\n  const email=document.getElementById('email').value.trim();\n  if(!name||!email){showMsg('formMsg','Name and email required.','error');return;}\n  if(attendees.some(a=>a.email.toLowerCase()===email.toLowerCase())){showMsg('formMsg','Already registered.','error');return;}\n  attendees.push({name,email});\n  document.getElementById('signupForm').reset();\n  showMsg('formMsg','You\\'re registered!','success');\n  updateUI();\n});\n\ndocument.getElementById('waitlistForm').addEventListener('submit',function(e){\n  e.preventDefault();\n  const email=document.getElementById('wlEmail').value.trim();\n  if(!email){showMsg('wlMsg','Email required.','error');return;}\n  if(waitlist.includes(email.toLowerCase())){showMsg('wlMsg','Already on waitlist.','error');return;}\n  waitlist.push(email.toLowerCase());\n  document.getElementById('waitlistForm').reset();\n  showMsg('wlMsg','Added to waitlist!','success');\n});\n\nfunction showTab(t){\n  document.querySelectorAll('.tab').forEach((el,i)=>{\n    el.classList.toggle('active',i===(t==='signup'?0:1));\n  });\n  document.getElementById('signupTab').style.display=t==='signup'?'block':'none';\n  document.getElementById('attendeeList').style.display=t==='attendees'?'block':'none';\n  if(t==='attendees')renderTable();\n}\n\nfunction toggleAdmin(){\n  const p=document.getElementById('adminPanel');\n  p.style.display=p.style.display==='block'?'none':'block';\n}\n\nfunction exportCSV(){\n  let csv='Name,Email\\n';\n  attendees.forEach(a=>{csv+=`\"${a.name.replace(/\"/g,'\"\"')}\",\"${a.email}\"\\n`;});\n  const blob=new Blob([csv],{type:'text/csv'});\n  const url=URL.createObjectURL(blob);\n  const a=document.createElement('a');\n  a.href=url;a.download='tech-talk-attendees.csv';a.click();\n  URL.revokeObjectURL(url);\n}\n\nupdateUI();\n</script>\n\n<details style=\"margin-top:20px;font-size:.75rem;color:#6b7280;padding:8px 0\">\n<summary>Built from your answers</summary>\n<ul style=\"padding-left:18px;margin-top:8px;line-height:1.8\">\n<li>100-seat capacity with progress bar — Q1 Requester</li>\n<li>Name + email fields only — Q4 Requester</li>\n<li>Auto-close signup at capacity, show waitlist form — Q6 Requester</li>\n<li>Public attendee list tab — Q2 Requester</li>\n<li>Admin CSV download button — Q5 Admin</li>\n<li>Hosted inline (no external deps) — Q3 Requester</li>\n</ul>\n</details>\n</body>\n</html>\n",
+  "steps": [
+   {
+    "tool": "ls",
+    "args": {}
+   },
+   {
+    "tool": "write",
+    "args": {
+     "path": "index.html",
+     "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Tech Talk Sign-Up</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#1a1a2e;line-height:1.5}\n.container{max-width:640px;margin:0 auto;padding:20px}\nh1{font-size:1.5rem;margin-bottom:4px}\n.subtitle{color:#555;font-size:.9rem;margin-bottom:20px}\n.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}\n.card h2{font-size:1.1rem;margin-bottom:12px}\nlabel{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px}\ninput{width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:6px;font-size:.95rem;margin-bottom:12px}\ninput:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 2px rgba(79,70,229,.15)}\nbutton{padding:10px 20px;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;transition:background .2s}\n.btn-primary{background:#4f46e5;color:#fff}.btn-primary:hover{background:#4338ca}\n.btn-secondary{background:#e0e7ff;color:#4f46e5}.btn-secondary:hover{background:#c7d2fe}\n.btn-outline{background:transparent;border:1px solid #d0d5dd;color:#555}.btn-outline:hover{background:#f9fafb}\n.msg{padding:10px 14px;border-radius:6px;font-size:.85rem;margin-bottom:12px;display:none}\n.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}\n.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}\n.msg-info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}\n.counter{font-size:.85rem;color:#6b7280;margin-bottom:12px}\n.counter strong{color:#4f46e5}\ntable{width:100%;border-collapse:collapse;font-size:.85rem}\nth{text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;color:#6b7280;font-weight:600}\ntd{padding:8px;border-bottom:1px solid #f3f4f6}\n.tabs{display:flex;gap:4px;margin-bottom:16px}\n.tab{flex:1;padding:8px;text-align:center;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;background:#e0e7ff;color:#4f46e5;border:none}\n.tab.active{background:#4f46e5;color:#fff}\n.admin-toggle{font-size:.8rem;color:#9ca3af;cursor:pointer;text-decoration:underline;margin-top:8px;display:inline-block}\n#attendeeList,#adminPanel{display:none}\n.seats-bar{height:6px;background:#e5e7eb;border-radius:3px;margin-bottom:12px;overflow:hidden}\n.seats-fill{height:100%;background:#4f46e5;border-radius:3px;transition:width .3s}\n</style>\n</head>\n<body>\n<div class=\"container\">\n<h1>Tech Talk Sign-Up</h1>\n<p class=\"subtitle\">Next month · Limited to 100 seats</p>\n\n<div class=\"tabs\">\n<button class=\"tab active\" onclick=\"showTab('signup')\">Sign Up</button>\n<button class=\"tab\" onclick=\"showTab('attendees')\">Attendee List</button>\n</div>\n\n<!-- SIGN UP TAB -->\n<div id=\"signupTab\">\n<div class=\"card\" id=\"signupCard\">\n<h2>Register</h2>\n<div class=\"seats-bar\"><div class=\"seats-fill\" id=\"seatsBar\"></div></div>\n<p class=\"counter\"><strong id=\"seatCount\">0</strong> / 100 seats filled</p>\n<div id=\"formMsg\" class=\"msg\"></div>\n<form id=\"signupForm\">\n<label for=\"name\">Name *</label>\n<input type=\"text\" id=\"name\" required placeholder=\"Your full name\">\n<label for=\"email\">Email *</label>\n<input type=\"email\" id=\"email\" required placeholder=\"you@example.com\">\n<button type=\"submit\" class=\"btn-primary\" id=\"submitBtn\">Sign Up</button>\n</form>\n</div>\n\n<div class=\"card\" id=\"waitlistCard\" style=\"display:none\">\n<h2>All Seats Full — Join Waitlist</h2>\n<p class=\"msg msg-info\" style=\"display:block\">All 100 seats are taken. Enter your email to be waitlisted.</p>\n<div id=\"wlMsg\" class=\"msg\"></div>\n<form id=\"waitlistForm\">\n<label for=\"wlEmail\">Email *</label>\n<input type=\"email\" id=\"wlEmail\" required placeholder=\"you@example.com\">\n<button type=\"submit\" class=\"btn-secondary\">Join Waitlist</button>\n</form>\n</div>\n</div>\n\n<!-- ATTENDEE LIST TAB -->\n<div id=\"attendeeList\">\n<div class=\"card\">\n<h2>Public Attendee List</h2>\n<p class=\"counter\" id=\"listCount\">0 registered</p>\n<table>\n<thead><tr><th>#</th><th>Name</th><th>Email</th></tr></thead>\n<tbody id=\"attendeeBody\"></tbody>\n</table>\n</div>\n<span class=\"admin-toggle\" onclick=\"toggleAdmin()\">Admin tools</span>\n<div class=\"card\" id=\"adminPanel\">\n<h2>Admin Export</h2>\n<p class=\"counter\" id=\"exportCount\">0 attendees ready to export</p>\n<button class=\"btn-outline\" onclick=\"exportCSV()\">⬇ Download CSV</button>\n</div>\n</div>\n</div>\n\n<script>\nconst CAPACITY=100;\nlet attendees=[];\nlet waitlist=[];\n\n// Seed fake data\nfor(let i=1;i<=42;i++){\n  attendees.push({name:`Attendee ${i}`,email:`user${i}@example.com`});\n}\n\nfunction updateUI(){\n  const n=attendees.length;\n  document.getElementById('seatCount').textContent=n;\n  document.getElementById('seatsBar').style.width=(n/CAPACITY*100)+'%';\n  document.getElementById('listCount').textContent=n+' registered';\n  document.getElementById('exportCount').textContent=n+' attendees ready to export';\n  const full=n>=CAPACITY;\n  document.getElementById('signupCard').style.display=full?'none':'block';\n  document.getElementById('waitlistCard').style.display=full?'block':'none';\n  renderTable();\n}\n\nfunction renderTable(){\n  const tb=document.getElementById('attendeeBody');\n  tb.innerHTML='';\n  attendees.forEach((a,i)=>{\n    const tr=document.createElement('tr');\n    tr.innerHTML=`<td>${i+1}</td><td>${esc(a.name)}</td><td>${esc(a.email)}</td>`;\n    tb.appendChild(tr);\n  });\n}\n\nfunction esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}\n\nfunction showMsg(id,text,type){\n  const el=document.getElementById(id);\n  el.className='msg msg-'+type;el.textContent=text;el.style.display='block';\n  setTimeout(()=>el.style.display='none',4000);\n}\n\ndocument.getElementById('signupForm').addEventListener('submit',function(e){\n  e.preventDefault();\n  if(attendees.length>=CAPACITY){showMsg('formMsg','Seats are full.','error');return;}\n  const name=document.getElementById('name').value.trim();\n  const email=document.getElementById('email').value.trim();\n  if(!name||!email){showMsg('formMsg','Name and email required.','error');return;}\n  if(attendees.some(a=>a.email.toLowerCase()===email.toLowerCase())){showMsg('formMsg','Already registered.','error');return;}\n  attendees.push({name,email});\n  document.getElementById('signupForm').reset();\n  showMsg('formMsg','You\\'re registered!','success');\n  updateUI();\n});\n\ndocument.getElementById('waitlistForm').addEventListener('submit',function(e){\n  e.preventDefault();\n  const email=document.getElementById('wlEmail').value.trim();\n  if(!email){showMsg('wlMsg','Email required.','error');return;}\n  if(waitlist.includes(email.toLowerCase())){showMsg('wlMsg','Already on waitlist.','error');return;}\n  waitlist.push(email.toLowerCase());\n  document.getElementById('waitlistForm').reset();\n  showMsg('wlMsg','Added to waitlist!','success');\n});\n\nfunction showTab(t){\n  document.querySelectorAll('.tab').forEach((el,i)=>{\n    el.classList.toggle('active',i===(t==='signup'?0:1));\n  });\n  document.getElementById('signupTab').style.display=t==='signup'?'block':'none';\n  document.getElementById('attendeeList').style.display=t==='attendees'?'block':'none';\n  if(t==='attendees')renderTable();\n}\n\nfunction toggleAdmin(){\n  const p=document.getElementById('adminPanel');\n  p.style.display=p.style.display==='block'?'none':'block';\n}\n\nfunction exportCSV(){\n  let csv='Name,Email\\n';\n  attendees.forEach(a=>{csv+=`\"${a.name.replace(/\"/g,'\"\"')}\",\"${a.email}\"\\n`;});\n  const blob=new Blob([csv],{type:'text/csv'});\n  const url=URL.createObjectURL(blob);\n  const a=document.createElement('a');\n  a.href=url;a.download='tech-talk-attendees.csv';a.click();\n  URL.revokeObjectURL(url);\n}\n\nupdateUI();\n</script>\n\n<details style=\"margin-top:20px;font-size:.75rem;color:#6b7280;padding:8px 0\">\n<summary>Built from your answers</summary>\n<ul style=\"padding-left:18px;margin-top:8px;line-height:1.8\">\n<li>100-seat capacity with progress bar — Q1 Requester</li>\n<li>Name + email fields only — Q4 Requester</li>\n<li>Auto-close signup at capacity, show waitlist form — Q6 Requester</li>\n<li>Public attendee list tab — Q2 Requester</li>\n<li>Admin CSV download button — Q5 Admin</li>\n<li>Hosted inline (no external deps) — Q3 Requester</li>\n</ul>\n</details>\n</body>\n</html>\n"
+    }
+   }
+  ]
+ },
+ "22daa63f4134ee3e1450635ef6d7a96dc55e5531": {
+  "title": "Team Task Board Setup",
+  "understanding": "Create visible task board to replace daily chat status updates.",
+  "deadline": "",
+  "subtasks": [
+   {
+    "title": "Select board tool",
+    "detail": "Choose platform matching team workflow and access needs"
+   },
+   {
+    "title": "Define board structure",
+    "detail": "Set columns, fields, and status workflow rules"
+   },
+   {
+    "title": "Migrate existing tasks",
+    "detail": "Import current work items and assign owners"
+   },
+   {
+    "title": "Train team on usage",
+    "detail": "Demo board and agree on update cadence"
+   }
+  ],
+  "known": [
+   "Goal: eliminate daily status chat messages",
+   "Audience: whole team needs visibility",
+   "Current state: ad-hoc chat updates"
+  ],
+  "questions": [
+   {
+    "question": "Which tool should host the task board?",
+    "to": "Requester",
+    "why": "Wrong tool causes low adoption or extra cost",
+    "options": [
+     "Jira",
+     "Trello",
+     "Notion",
+     "GitHub Projects"
+    ]
+   },
+   {
+    "question": "What statuses must the board track?",
+    "to": "Requester",
+    "why": "Missing states hide real progress or blockers",
+    "options": [
+     "To Do/Doing/Done",
+     "Include Blocked state",
+     "Include Review state",
+     "Custom workflow"
+    ]
+   },
+   {
+    "question": "Who maintains board data quality?",
+    "to": "Requester",
+    "why": "Stale boards lose trust and revert to chat",
+    "options": [
+     "Each member self-updates",
+     "Tech lead enforces daily",
+     "Scrum master owns hygiene",
+     "Rotating weekly owner"
+    ]
+   }
+  ],
+  "needs_meeting": false,
+  "meeting_reason": "Tool and workflow choice is single-owner decision",
+  "stakeholders": [
+   {
+    "name": "Requester",
+    "role": "Team Lead",
+    "cares": "Visibility without daily chat noise"
+   },
+   {
+    "name": "Team Member",
+    "role": "Developer",
+    "cares": "Low-friction status updates"
+   },
+   {
+    "name": "Manager",
+    "role": "Stakeholder",
+    "cares": "Accurate progress at a glance"
+   }
+  ]
+ },
+ "6bf79e28b85e7eac05c9a20d07de5fe8f968b17f": {
+  "understanding": "Notion task board with To Do/Doing/Done and Slack notifications.",
+  "complete": false,
+  "remaining": [
+   "Default: manual updates if auto-sync fails"
+  ],
+  "questions": [
+   {
+    "question": "Which Slack events trigger board notifications?",
+    "to": "Requester",
+    "why": "Wrong triggers recreate the chat noise problem",
+    "options": [
+     "Status changes only",
+     "New tasks + status changes",
+     "All board activity",
+     "Daily digest only"
+    ]
+   },
+   {
+    "question": "What fields must each task card include?",
+    "to": "Team Members",
+    "why": "Missing fields force follow-up questions in chat",
+    "options": [
+     "Assignee + due date",
+     "Assignee + priority + date",
+     "Title + assignee only",
+     "Full spec template"
+    ]
+   },
+   {
+    "question": "How should Manager access progress data?",
+    "to": "Manager",
+    "why": "Access method determines reporting automation needs",
+    "options": [
+     "View-only Notion link",
+     "Weekly Slack summary",
+     "Exported CSV report",
+     "Dashboard embed"
+    ]
+   }
+  ],
+  "conflicts": []
+ },
+ "d99d880b164bf3759332df6f37a73d3157b5fdfd": {
+  "understanding": "Notion task board with Slack status notifications and CSV export.",
+  "complete": false,
+  "remaining": [
+   "CSV export frequency: weekly default",
+   "Slack channel for notifications: team channel default"
+  ],
+  "questions": [
+   {
+    "question": "Which Slack channel receives status change notifications?",
+    "to": "Requester",
+    "why": "Wrong channel causes noise or missed updates.",
+    "options": [
+     "Team channel",
+     "Project-specific channel",
+     "DM to assignee"
+    ]
+   },
+   {
+    "question": "How often should CSV reports be generated?",
+    "to": "Manager",
+    "why": "Frequency determines automation vs manual effort.",
+    "options": [
+     "Weekly automated",
+     "Daily automated",
+     "On-demand manual"
+    ]
+   },
+   {
+    "question": "Who creates and assigns new tasks?",
+    "to": "Requester",
+    "why": "Permissions affect board setup and workflow.",
+    "options": [
+     "Team Lead only",
+     "All team members",
+     "Lead + senior devs"
+    ]
+   }
+  ],
+  "conflicts": []
+ },
+ "ce377d638b6a3939b87c725cd82b748f8e87343c": {
+  "understanding": "Notion task board with Slack notifications and weekly CSV export.",
+  "complete": true,
+  "remaining": [],
+  "questions": [],
+  "conflicts": []
+ },
+ "f056724795396ee2255e6443b3735aafc3fb92cb": {
+  "goal": "Build Notion task board with Slack notifications and CSV export",
+  "in_scope": [
+   "Notion board with To Do/Doing/Done",
+   "Slack status change notifications to team channel",
+   "Weekly automated CSV progress report",
+   "Task cards with assignee and due date",
+   "Team Lead only creates and assigns tasks"
+  ],
+  "out_of_scope": [
+   "Manual CSV exports",
+   "Non-status-change Slack notifications",
+   "Task creation by non-Leads",
+   "Other tool integrations"
+  ],
+  "acceptance_criteria": [
+   "Board shows To Do/Doing/Done statuses",
+   "Status changes notify team Slack channel",
+   "CSV report generates weekly automatically",
+   "Tasks display assignee and due date",
+   "Only Team Lead creates or assigns tasks"
+  ],
+  "subtasks": [
+   {
+    "title": "Create Notion board",
+    "detail": "Set up database with three status columns"
+   },
+   {
+    "title": "Configure card fields",
+    "detail": "Add assignee and due date properties"
+   },
+   {
+    "title": "Set up Slack integration",
+    "detail": "Notify team channel on status changes only"
+   },
+   {
+    "title": "Automate CSV export",
+    "detail": "Schedule weekly report generation for Manager"
+   },
+   {
+    "title": "Restrict task permissions",
+    "detail": "Limit create and assign rights to Team Lead"
+   }
+  ],
+  "decisions": [
+   {
+    "decision": "Use Notion as host platform",
+    "source": "Q1 Requester"
+   },
+   {
+    "decision": "Three statuses: To Do/Doing/Done",
+    "source": "Q2 Requester"
+   },
+   {
+    "decision": "Notify Slack on status changes only",
+    "source": "Q4 Requester"
+   },
+   {
+    "decision": "Cards require assignee and due date",
+    "source": "Q5 Team Members"
+   },
+   {
+    "decision": "Weekly automated CSV for Manager",
+    "source": "Q8 Manager"
+   },
+   {
+    "decision": "Team Lead creates and assigns tasks",
+    "source": "Q9 Requester"
+   }
+  ],
+  "open_issues": []
+ },
+ "07c02d50fb2379c558b78b7207b14b910a17020b": {
+  "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Team Task Board</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#333;height:100vh;display:flex;flex-direction:column}\nheader{background:#fff;padding:10px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}\nheader h1{font-size:18px;font-weight:700}\n.header-actions{display:flex;gap:8px;align-items:center}\n.role-badge{font-size:11px;padding:3px 8px;border-radius:12px;background:#e8f5e9;color:#2e7d32;font-weight:600}\n.btn{padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}\n.btn-primary{background:#4a90d9;color:#fff}.btn-primary:hover{background:#357abd}\n.btn-export{background:#34a853;color:#fff}.btn-export:hover{background:#2d9249}\n.btn:disabled{opacity:.4;cursor:not-allowed}\n.board{display:flex;gap:12px;padding:12px;flex:1;overflow-x:auto;min-height:0}\n.column{background:#ebecf0;border-radius:8px;width:33.33%;min-width:220px;display:flex;flex-direction:column;max-height:100%}\n.column-header{padding:10px 12px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}\n.column-header .count{background:#ccc;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600}\n.cards{padding:6px;overflow-y:auto;flex:1;min-height:40px}\n.card{background:#fff;border-radius:6px;padding:10px;margin-bottom:8px;box-shadow:0 1px 2px rgba(0,0,0,.1);cursor:grab;transition:box-shadow .15s}\n.card:hover{box-shadow:0 2px 6px rgba(0,0,0,.15)}\n.card.dragging{opacity:.5}\n.card-title{font-size:13px;font-weight:600;margin-bottom:6px}\n.card-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#666}\n.card-assignee{display:flex;align-items:center;gap:4px}\n.avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;flex-shrink:0}\n.card-due{font-size:11px}\n.card-due.overdue{color:#d32f2f;font-weight:600}\n.status-select{margin-top:6px;width:100%;padding:3px;font-size:11px;border:1px solid #ddd;border-radius:4px}\n.slack-log{background:#fff;border-top:1px solid #ddd;padding:6px 20px;font-size:11px;color:#555;flex-shrink:0;max-height:60px;overflow-y:auto}\n.slack-log div{padding:1px 0}\n.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10}\n.modal-overlay.active{display:flex}\n.modal{background:#fff;border-radius:10px;padding:20px;width:340px;max-width:90vw}\n.modal h2{font-size:16px;margin-bottom:12px}\n.modal label{display:block;font-size:12px;font-weight:600;margin:8px 0 3px;color:#555}\n.modal input,.modal select{width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;font-size:13px}\n.modal-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}\n.toast{position:fixed;bottom:20px;right:20px;background:#323232;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}\n.toast.show{opacity:1}\ndetails.summary-section{padding:8px 20px;font-size:11px;color:#777;border-top:1px solid #eee;flex-shrink:0}\ndetails.summary-section summary{cursor:pointer;font-weight:600}\ndetails.summary-section ul{margin:4px 0 0 16px;line-height:1.6}\n</style>\n</head>\n<body>\n\n<header>\n  <h1>📋 Team Task Board</h1>\n  <div class=\"header-actions\">\n    <span class=\"role-badge\" id=\"roleBadge\">Team Lead</span>\n    <select id=\"roleSwitch\" style=\"font-size:11px;padding:3px;border-radius:4px;border:1px solid #ccc\">\n      <option value=\"lead\">View as: Team Lead</option>\n      <option value=\"member\">View as: Member</option>\n      <option value=\"manager\">View as: Manager</option>\n    </select>\n    <button class=\"btn btn-primary\" id=\"addTaskBtn\">+ New Task</button>\n    <button class=\"btn btn-export\" id=\"exportCsvBtn\">Export CSV</button>\n  </div>\n</header>\n\n<div class=\"board\" id=\"board\">\n  <div class=\"column\" data-status=\"todo\">\n    <div class=\"column-header\">To Do <span class=\"count\" id=\"count-todo\">0</span></div>\n    <div class=\"cards\" id=\"col-todo\"></div>\n  </div>\n  <div class=\"column\" data-status=\"doing\">\n    <div class=\"column-header\">Doing <span class=\"count\" id=\"count-doing\">0</span></div>\n    <div class=\"cards\" id=\"col-doing\"></div>\n  </div>\n  <div class=\"column\" data-status=\"done\">\n    <div class=\"column-header\">Done <span class=\"count\" id=\"count-done\">0</span></div>\n    <div class=\"cards\" id=\"col-done\"></div>\n  </div>\n</div>\n\n<div class=\"slack-log\" id=\"slackLog\"><strong>#team-channel</strong> — Slack notifications appear here</div>\n\n<div class=\"modal-overlay\" id=\"modalOverlay\">\n  <div class=\"modal\">\n    <h2>Create New Task</h2>\n    <label>Task Title</label>\n    <input type=\"text\" id=\"taskTitle\" placeholder=\"e.g. Design homepage mockup\">\n    <label>Assignee</label>\n    <select id=\"taskAssignee\">\n      <option value=\"Alice\">Alice</option>\n      <option value=\"Bob\">Bob</option>\n      <option value=\"Carol\">Carol</option>\n      <option value=\"Dave\">Dave</option>\n    </select>\n    <label>Due Date</label>\n    <input type=\"date\" id=\"taskDue\">\n    <label>Status</label>\n    <select id=\"taskStatus\">\n      <option value=\"todo\">To Do</option>\n      <option value=\"doing\">Doing</option>\n      <option value=\"done\">Done</option>\n    </select>\n    <div class=\"modal-actions\">\n      <button class=\"btn\" id=\"cancelBtn\" style=\"background:#eee\">Cancel</button>\n      <button class=\"btn btn-primary\" id=\"saveTaskBtn\">Create Task</button>\n    </div>\n  </div>\n</div>\n\n<div class=\"toast\" id=\"toast\"></div>\n\n<details class=\"summary-section\">\n  <summary>Built from your answers</summary>\n  <ul>\n    <li><strong>Notion-style board</strong> — Q1 Requester (host platform)</li>\n    <li><strong>To Do / Doing / Done columns</strong> — Q2 Requester (statuses)</li>\n    <li><strong>Slack notifications on status change</strong> — Q3, Q4, Q7 Requester</li>\n    <li><strong>Assignee + due date on cards</strong> — Q5 Team Members</li>\n    <li><strong>CSV export for Manager</strong> — Q6, Q8 Manager (weekly automated)</li>\n    <li><strong>Team Lead only creates/assigns tasks</strong> — Q9 Requester</li>\n  </ul>\n</details>\n\n<script>\nconst COLORS = {Alice:'#4a90d9',Bob:'#e67e22',Carol:'#9b59b6',Dave:'#27ae60'};\nlet currentRole = 'lead';\n\nlet tasks = [\n  {id:1,title:'Design homepage mockup',assignee:'Alice',due:'2025-02-10',status:'todo'},\n  {id:2,title:'Set up CI/CD pipeline',assignee:'Bob',due:'2025-02-08',status:'doing'},\n  {id:3,title:'Write API documentation',assignee:'Carol',due:'2025-02-12',status:'todo'},\n  {id:4,title:'User testing round 1',assignee:'Dave',due:'2025-02-05',status:'done'},\n  {id:5,title:'Fix login bug',assignee:'Bob',due:'2025-02-06',status:'doing'},\n  {id:6,title:'Update dependencies',assignee:'Alice',due:'2025-02-15',status:'todo'}\n];\nlet nextId = 7;\n\nfunction render() {\n  ['todo','doing','done'].forEach(s => {\n    const col = document.getElementById('col-'+s);\n    col.innerHTML = '';\n    const filtered = tasks.filter(t=>t.status===s);\n    document.getElementById('count-'+s).textContent = filtered.length;\n    filtered.forEach(t => {\n      const card = document.createElement('div');\n      card.className = 'card';\n      card.draggable = true;\n      card.dataset.id = t.id;\n      const overdue = t.status!=='done' && new Date(t.due) < new Date() ? ' overdue':'';\n      card.innerHTML = `\n        <div class=\"card-title\">${esc(t.title)}</div>\n        <div class=\"card-meta\">\n          <span class=\"card-assignee\"><span class=\"avatar\" style=\"background:${COLORS[t.assignee]||'#999'}\">${t.assignee[0]}</span>${esc(t.assignee)}</span>\n          <span class=\"card-due${overdue}\">📅 ${t.due}</span>\n        </div>\n        <select class=\"status-select\" data-id=\"${t.id}\">\n          <option value=\"todo\"${t.status==='todo'?' selected':''}>To Do</option>\n          <option value=\"doing\"${t.status==='doing'?' selected':''}>Doing</option>\n          <option value=\"done\"${t.status==='done'?' selected':''}>Done</option>\n        </select>`;\n      col.appendChild(card);\n    });\n  });\n  updateButtons();\n}\n\nfunction esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}\n\nfunction updateButtons() {\n  const isLead = currentRole === 'lead';\n  const isManager = currentRole === 'manager';\n  document.getElementById('addTaskBtn').disabled = !isLead;\n  document.getElementById('addTaskBtn').title = isLead ? 'Create new task (Team Lead)' : 'Only Team Lead can create tasks';\n  document.getElementById('exportCsvBtn').disabled = !isManager;\n  document.getElementById('exportCsvBtn').title = isManager ? 'Export weekly CSV report' : 'Only Manager can export CSV';\n  document.getElementById('roleBadge').textContent = currentRole==='lead'?'Team Lead':currentRole==='manager'?'Manager':'Member';\n}\n\nfunction logSlack(msg) {\n  const log = document.getElementById('slackLog');\n  const d = document.createElement('div');\n  const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});\n  d.textContent = `[${time}] 🔔 ${msg}`;\n  log.appendChild(d);\n  log.scrollTop = log.scrollHeight;\n}\n\nfunction showToast(msg) {\n  const t = document.getElementById('toast');\n  t.textContent = msg;\n  t.classList.add('show');\n  setTimeout(()=>t.classList.remove('show'), 2500);\n}\n\n// Status change via dropdown\ndocument.getElementById('board').addEventListener('change', e => {\n  if (!e.target.classList.contains('status-select')) return;\n  const id = +e.target.dataset.id;\n  const task = tasks.find(t=>t.id===id);\n  if (!task) return;\n  const oldStatus = task.status;\n  const newStatus = e.target.value;\n  if (oldStatus === newStatus) return;\n  task.status = newStatus;\n  const labels = {todo:'To Do',doing:'Doing',done:'Done'};\n  logSlack(`\"${task.title}\" moved ${labels[oldStatus]} → ${labels[newStatus]} (by ${task.assignee})`);\n  render();\n});\n\n// Drag and drop\nlet dragId = null;\ndocument.getElementById('board').addEventListener('dragstart', e => {\n  if (!e.target.classList.contains('card')) return;\n  dragId = +e.target.dataset.id;\n  e.target.classList.add('dragging');\n});\ndocument.getElementById('board').addEventListener('dragend', e => {\n  if (e.target.classList.contains('card')) e.target.classList.remove('dragging');\n  dragId = null;\n});\ndocument.querySelectorAll('.cards').forEach(col => {\n  col.addEventListener('dragover', e => e.preventDefault());\n  col.addEventListener('drop', e => {\n    e.preventDefault();\n    if (dragId == null) return;\n    const newStatus = col.parentElement.dataset.status;\n    const task = tasks.find(t=>t.id===dragId);\n    if (!task || task.status === newStatus) return;\n    const oldStatus = task.status;\n    task.status = newStatus;\n    const labels = {todo:'To Do',doing:'Doing',done:'Done'};\n    logSlack(`\"${task.title}\" moved ${labels[oldStatus]} → ${labels[newStatus]}`);\n    render();\n  });\n});\n\n// Role switch\ndocument.getElementById('roleSwitch').addEventListener('change', e => {\n  currentRole = e.target.value;\n  render();\n});\n\n// Modal\nconst overlay = document.getElementById('modalOverlay');\ndocument.getElementById('addTaskBtn').addEventListener('click', () => {\n  if (currentRole !== 'lead') return;\n  document.getElementById('taskTitle').value = '';\n  document.getElementById('taskDue').value = '';\n  overlay.classList.add('active');\n});\ndocument.getElementById('cancelBtn').addEventListener('click', () => overlay.classList.remove('active'));\noverlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('active'); });\n\ndocument.getElementById('saveTaskBtn').addEventListener('click', () => {\n  const title = document.getElementById('taskTitle').value.trim();\n  const assignee = document.getElementById('taskAssignee').value;\n  const due = document.getElementById('taskDue').value;\n  const status = document.getElementById('taskStatus').value;\n  if (!title) { showToast('Please enter a task title'); return; }\n  if (!due) { showToast('Please select a due date'); return; }\n  tasks.push({id:nextId++,title,assignee,due,status});\n  logSlack(`New task created: \"${title}\" assigned to ${assignee} (${status==='todo'?'To Do':status==='doing'?'Doing':'Done'})`);\n  overlay.classList.remove('active');\n  render();\n  showToast('Task created');\n});\n\n// CSV Export\ndocument.getElementById('exportCsvBtn').addEventListener('click', () => {\n  if (currentRole !== 'manager') return;\n  let csv = 'ID,Title,Assignee,Due Date,Status\\n';\n  tasks.forEach(t => {\n    csv += `${t.id},\"${t.title.replace(/\"/g,'\"\"')}\",${t.assignee},${t.due},${t.status}\\n`;\n  });\n  const blob = new Blob([csv],{type:'text/csv'});\n  const url = URL.createObjectURL(blob);\n  const a = document.createElement('a');\n  a.href = url;\n  a.download = `task-report-${new Date().toISOString().slice(0,10)}.csv`;\n  a.click();\n  URL.revokeObjectURL(url);\n  showToast('CSV exported');\n  logSlack('Weekly CSV report exported by Manager');\n});\n\nrender();\n</script>\n</body>\n</html>\n",
+  "steps": [
+   {
+    "tool": "ls",
+    "args": {}
+   },
+   {
+    "tool": "write",
+    "args": {
+     "path": "index.html",
+     "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Team Task Board</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#333;height:100vh;display:flex;flex-direction:column}\nheader{background:#fff;padding:10px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}\nheader h1{font-size:18px;font-weight:700}\n.header-actions{display:flex;gap:8px;align-items:center}\n.role-badge{font-size:11px;padding:3px 8px;border-radius:12px;background:#e8f5e9;color:#2e7d32;font-weight:600}\n.btn{padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}\n.btn-primary{background:#4a90d9;color:#fff}.btn-primary:hover{background:#357abd}\n.btn-export{background:#34a853;color:#fff}.btn-export:hover{background:#2d9249}\n.btn:disabled{opacity:.4;cursor:not-allowed}\n.board{display:flex;gap:12px;padding:12px;flex:1;overflow-x:auto;min-height:0}\n.column{background:#ebecf0;border-radius:8px;width:33.33%;min-width:220px;display:flex;flex-direction:column;max-height:100%}\n.column-header{padding:10px 12px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}\n.column-header .count{background:#ccc;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600}\n.cards{padding:6px;overflow-y:auto;flex:1;min-height:40px}\n.card{background:#fff;border-radius:6px;padding:10px;margin-bottom:8px;box-shadow:0 1px 2px rgba(0,0,0,.1);cursor:grab;transition:box-shadow .15s}\n.card:hover{box-shadow:0 2px 6px rgba(0,0,0,.15)}\n.card.dragging{opacity:.5}\n.card-title{font-size:13px;font-weight:600;margin-bottom:6px}\n.card-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#666}\n.card-assignee{display:flex;align-items:center;gap:4px}\n.avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;flex-shrink:0}\n.card-due{font-size:11px}\n.card-due.overdue{color:#d32f2f;font-weight:600}\n.status-select{margin-top:6px;width:100%;padding:3px;font-size:11px;border:1px solid #ddd;border-radius:4px}\n.slack-log{background:#fff;border-top:1px solid #ddd;padding:6px 20px;font-size:11px;color:#555;flex-shrink:0;max-height:60px;overflow-y:auto}\n.slack-log div{padding:1px 0}\n.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10}\n.modal-overlay.active{display:flex}\n.modal{background:#fff;border-radius:10px;padding:20px;width:340px;max-width:90vw}\n.modal h2{font-size:16px;margin-bottom:12px}\n.modal label{display:block;font-size:12px;font-weight:600;margin:8px 0 3px;color:#555}\n.modal input,.modal select{width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;font-size:13px}\n.modal-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}\n.toast{position:fixed;bottom:20px;right:20px;background:#323232;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}\n.toast.show{opacity:1}\ndetails.summary-section{padding:8px 20px;font-size:11px;color:#777;border-top:1px solid #eee;flex-shrink:0}\ndetails.summary-section summary{cursor:pointer;font-weight:600}\ndetails.summary-section ul{margin:4px 0 0 16px;line-height:1.6}\n</style>\n</head>\n<body>\n\n<header>\n  <h1>📋 Team Task Board</h1>\n  <div class=\"header-actions\">\n    <span class=\"role-badge\" id=\"roleBadge\">Team Lead</span>\n    <select id=\"roleSwitch\" style=\"font-size:11px;padding:3px;border-radius:4px;border:1px solid #ccc\">\n      <option value=\"lead\">View as: Team Lead</option>\n      <option value=\"member\">View as: Member</option>\n      <option value=\"manager\">View as: Manager</option>\n    </select>\n    <button class=\"btn btn-primary\" id=\"addTaskBtn\">+ New Task</button>\n    <button class=\"btn btn-export\" id=\"exportCsvBtn\">Export CSV</button>\n  </div>\n</header>\n\n<div class=\"board\" id=\"board\">\n  <div class=\"column\" data-status=\"todo\">\n    <div class=\"column-header\">To Do <span class=\"count\" id=\"count-todo\">0</span></div>\n    <div class=\"cards\" id=\"col-todo\"></div>\n  </div>\n  <div class=\"column\" data-status=\"doing\">\n    <div class=\"column-header\">Doing <span class=\"count\" id=\"count-doing\">0</span></div>\n    <div class=\"cards\" id=\"col-doing\"></div>\n  </div>\n  <div class=\"column\" data-status=\"done\">\n    <div class=\"column-header\">Done <span class=\"count\" id=\"count-done\">0</span></div>\n    <div class=\"cards\" id=\"col-done\"></div>\n  </div>\n</div>\n\n<div class=\"slack-log\" id=\"slackLog\"><strong>#team-channel</strong> — Slack notifications appear here</div>\n\n<div class=\"modal-overlay\" id=\"modalOverlay\">\n  <div class=\"modal\">\n    <h2>Create New Task</h2>\n    <label>Task Title</label>\n    <input type=\"text\" id=\"taskTitle\" placeholder=\"e.g. Design homepage mockup\">\n    <label>Assignee</label>\n    <select id=\"taskAssignee\">\n      <option value=\"Alice\">Alice</option>\n      <option value=\"Bob\">Bob</option>\n      <option value=\"Carol\">Carol</option>\n      <option value=\"Dave\">Dave</option>\n    </select>\n    <label>Due Date</label>\n    <input type=\"date\" id=\"taskDue\">\n    <label>Status</label>\n    <select id=\"taskStatus\">\n      <option value=\"todo\">To Do</option>\n      <option value=\"doing\">Doing</option>\n      <option value=\"done\">Done</option>\n    </select>\n    <div class=\"modal-actions\">\n      <button class=\"btn\" id=\"cancelBtn\" style=\"background:#eee\">Cancel</button>\n      <button class=\"btn btn-primary\" id=\"saveTaskBtn\">Create Task</button>\n    </div>\n  </div>\n</div>\n\n<div class=\"toast\" id=\"toast\"></div>\n\n<details class=\"summary-section\">\n  <summary>Built from your answers</summary>\n  <ul>\n    <li><strong>Notion-style board</strong> — Q1 Requester (host platform)</li>\n    <li><strong>To Do / Doing / Done columns</strong> — Q2 Requester (statuses)</li>\n    <li><strong>Slack notifications on status change</strong> — Q3, Q4, Q7 Requester</li>\n    <li><strong>Assignee + due date on cards</strong> — Q5 Team Members</li>\n    <li><strong>CSV export for Manager</strong> — Q6, Q8 Manager (weekly automated)</li>\n    <li><strong>Team Lead only creates/assigns tasks</strong> — Q9 Requester</li>\n  </ul>\n</details>\n\n<script>\nconst COLORS = {Alice:'#4a90d9',Bob:'#e67e22',Carol:'#9b59b6',Dave:'#27ae60'};\nlet currentRole = 'lead';\n\nlet tasks = [\n  {id:1,title:'Design homepage mockup',assignee:'Alice',due:'2025-02-10',status:'todo'},\n  {id:2,title:'Set up CI/CD pipeline',assignee:'Bob',due:'2025-02-08',status:'doing'},\n  {id:3,title:'Write API documentation',assignee:'Carol',due:'2025-02-12',status:'todo'},\n  {id:4,title:'User testing round 1',assignee:'Dave',due:'2025-02-05',status:'done'},\n  {id:5,title:'Fix login bug',assignee:'Bob',due:'2025-02-06',status:'doing'},\n  {id:6,title:'Update dependencies',assignee:'Alice',due:'2025-02-15',status:'todo'}\n];\nlet nextId = 7;\n\nfunction render() {\n  ['todo','doing','done'].forEach(s => {\n    const col = document.getElementById('col-'+s);\n    col.innerHTML = '';\n    const filtered = tasks.filter(t=>t.status===s);\n    document.getElementById('count-'+s).textContent = filtered.length;\n    filtered.forEach(t => {\n      const card = document.createElement('div');\n      card.className = 'card';\n      card.draggable = true;\n      card.dataset.id = t.id;\n      const overdue = t.status!=='done' && new Date(t.due) < new Date() ? ' overdue':'';\n      card.innerHTML = `\n        <div class=\"card-title\">${esc(t.title)}</div>\n        <div class=\"card-meta\">\n          <span class=\"card-assignee\"><span class=\"avatar\" style=\"background:${COLORS[t.assignee]||'#999'}\">${t.assignee[0]}</span>${esc(t.assignee)}</span>\n          <span class=\"card-due${overdue}\">📅 ${t.due}</span>\n        </div>\n        <select class=\"status-select\" data-id=\"${t.id}\">\n          <option value=\"todo\"${t.status==='todo'?' selected':''}>To Do</option>\n          <option value=\"doing\"${t.status==='doing'?' selected':''}>Doing</option>\n          <option value=\"done\"${t.status==='done'?' selected':''}>Done</option>\n        </select>`;\n      col.appendChild(card);\n    });\n  });\n  updateButtons();\n}\n\nfunction esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}\n\nfunction updateButtons() {\n  const isLead = currentRole === 'lead';\n  const isManager = currentRole === 'manager';\n  document.getElementById('addTaskBtn').disabled = !isLead;\n  document.getElementById('addTaskBtn').title = isLead ? 'Create new task (Team Lead)' : 'Only Team Lead can create tasks';\n  document.getElementById('exportCsvBtn').disabled = !isManager;\n  document.getElementById('exportCsvBtn').title = isManager ? 'Export weekly CSV report' : 'Only Manager can export CSV';\n  document.getElementById('roleBadge').textContent = currentRole==='lead'?'Team Lead':currentRole==='manager'?'Manager':'Member';\n}\n\nfunction logSlack(msg) {\n  const log = document.getElementById('slackLog');\n  const d = document.createElement('div');\n  const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});\n  d.textContent = `[${time}] 🔔 ${msg}`;\n  log.appendChild(d);\n  log.scrollTop = log.scrollHeight;\n}\n\nfunction showToast(msg) {\n  const t = document.getElementById('toast');\n  t.textContent = msg;\n  t.classList.add('show');\n  setTimeout(()=>t.classList.remove('show'), 2500);\n}\n\n// Status change via dropdown\ndocument.getElementById('board').addEventListener('change', e => {\n  if (!e.target.classList.contains('status-select')) return;\n  const id = +e.target.dataset.id;\n  const task = tasks.find(t=>t.id===id);\n  if (!task) return;\n  const oldStatus = task.status;\n  const newStatus = e.target.value;\n  if (oldStatus === newStatus) return;\n  task.status = newStatus;\n  const labels = {todo:'To Do',doing:'Doing',done:'Done'};\n  logSlack(`\"${task.title}\" moved ${labels[oldStatus]} → ${labels[newStatus]} (by ${task.assignee})`);\n  render();\n});\n\n// Drag and drop\nlet dragId = null;\ndocument.getElementById('board').addEventListener('dragstart', e => {\n  if (!e.target.classList.contains('card')) return;\n  dragId = +e.target.dataset.id;\n  e.target.classList.add('dragging');\n});\ndocument.getElementById('board').addEventListener('dragend', e => {\n  if (e.target.classList.contains('card')) e.target.classList.remove('dragging');\n  dragId = null;\n});\ndocument.querySelectorAll('.cards').forEach(col => {\n  col.addEventListener('dragover', e => e.preventDefault());\n  col.addEventListener('drop', e => {\n    e.preventDefault();\n    if (dragId == null) return;\n    const newStatus = col.parentElement.dataset.status;\n    const task = tasks.find(t=>t.id===dragId);\n    if (!task || task.status === newStatus) return;\n    const oldStatus = task.status;\n    task.status = newStatus;\n    const labels = {todo:'To Do',doing:'Doing',done:'Done'};\n    logSlack(`\"${task.title}\" moved ${labels[oldStatus]} → ${labels[newStatus]}`);\n    render();\n  });\n});\n\n// Role switch\ndocument.getElementById('roleSwitch').addEventListener('change', e => {\n  currentRole = e.target.value;\n  render();\n});\n\n// Modal\nconst overlay = document.getElementById('modalOverlay');\ndocument.getElementById('addTaskBtn').addEventListener('click', () => {\n  if (currentRole !== 'lead') return;\n  document.getElementById('taskTitle').value = '';\n  document.getElementById('taskDue').value = '';\n  overlay.classList.add('active');\n});\ndocument.getElementById('cancelBtn').addEventListener('click', () => overlay.classList.remove('active'));\noverlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('active'); });\n\ndocument.getElementById('saveTaskBtn').addEventListener('click', () => {\n  const title = document.getElementById('taskTitle').value.trim();\n  const assignee = document.getElementById('taskAssignee').value;\n  const due = document.getElementById('taskDue').value;\n  const status = document.getElementById('taskStatus').value;\n  if (!title) { showToast('Please enter a task title'); return; }\n  if (!due) { showToast('Please select a due date'); return; }\n  tasks.push({id:nextId++,title,assignee,due,status});\n  logSlack(`New task created: \"${title}\" assigned to ${assignee} (${status==='todo'?'To Do':status==='doing'?'Doing':'Done'})`);\n  overlay.classList.remove('active');\n  render();\n  showToast('Task created');\n});\n\n// CSV Export\ndocument.getElementById('exportCsvBtn').addEventListener('click', () => {\n  if (currentRole !== 'manager') return;\n  let csv = 'ID,Title,Assignee,Due Date,Status\\n';\n  tasks.forEach(t => {\n    csv += `${t.id},\"${t.title.replace(/\"/g,'\"\"')}\",${t.assignee},${t.due},${t.status}\\n`;\n  });\n  const blob = new Blob([csv],{type:'text/csv'});\n  const url = URL.createObjectURL(blob);\n  const a = document.createElement('a');\n  a.href = url;\n  a.download = `task-report-${new Date().toISOString().slice(0,10)}.csv`;\n  a.click();\n  URL.revokeObjectURL(url);\n  showToast('CSV exported');\n  logSlack('Weekly CSV report exported by Manager');\n});\n\nrender();\n</script>\n</body>\n</html>\n"
+    }
+   }
+  ]
  }
 }

@@ -73,6 +73,9 @@ PAGES = ["Stakeholders", "Worker", "Project Knowledge Base"]
 STEPS = ["Post task", "AI questions", "Task brief", "Requirement demo", "Worker Q&A", "Knowledge captured"]
 COVER_COLORS = ["#4f46e5", "#0f766e", "#c2410c", "#be185d", "#1d4ed8", "#7c3aed", "#15803d", "#b45309"]
 WAITING = "⏳ Awaiting a stakeholder's answer"
+KB_TABS = ["📋 Overview", "📄 Document", "🖥️ Demo", "💬 Ask", "🕒 Timeline"]
+KB_SORTS = ["Recently updated", "Deadline soonest", "Name"]
+KB_LAYOUTS = ["🕸️ Map", "🗂️ Cards"]
 ALL_KB = "__all__"  # Marker in kb_chat for cross-project Q&A
 ALL_QS = [
     "Which projects still have questions waiting for a stakeholder?",
@@ -85,8 +88,8 @@ ALL_QS = [
 ANALYZE_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {"type": "string", "description": "Short task title, at most 8 words"},
-        "understanding": {"type": "string", "description": "Restate your understanding of the task goal in one or two sentences"},
+        "title": {"type": "string", "description": "Short task title, max 5 words"},
+        "understanding": {"type": "string", "description": "The task goal in one sentence, max 15 words"},
         "deadline": {"type": "string", "description": "Deadline mentioned in the task, resolved from today's date as YYYY-MM-DD; leave empty if not mentioned"},
         "subtasks": {
             "type": "array",
@@ -95,26 +98,26 @@ ANALYZE_SCHEMA = {
                 "properties": {"title": {"type": "string"}, "detail": {"type": "string"}},
                 "required": ["title", "detail"],
             },
-            "description": "Initial breakdown into 3 to 6 subtasks",
+            "description": "Initial breakdown into 3 to 5 subtasks; detail max 12 words",
         },
-        "known": {"type": "array", "items": {"type": "string"}, "description": "Information already made clear in the task"},
+        "known": {"type": "array", "items": {"type": "string"}, "description": "Facts already clear in the task, max 5 items of max 10 words"},
         "questions": {
             "type": "array",
             "maxItems": 3,
             "items": {
                 "type": "object",
                 "properties": {
-                    "question": {"type": "string"},
+                    "question": {"type": "string", "description": "Max 12 words"},
                     "to": {"type": "string", "description": "Name of the stakeholder who owns this decision, exactly as in the stakeholder list"},
-                    "why": {"type": "string", "description": "Why ask this, and what goes wrong if it isn't clarified"},
-                    "options": {"type": "array", "items": {"type": "string"}, "description": "Possible answers; leave empty if none"},
+                    "why": {"type": "string", "description": "What goes wrong if unanswered, max 10 words"},
+                    "options": {"type": "array", "items": {"type": "string"}, "description": "2-4 possible answers, max 6 words each; leave empty if none"},
                 },
                 "required": ["question", "to", "why", "options"],
             },
             "description": "This round's most critical clarifying questions, at most 3, ordered by importance",
         },
         "needs_meeting": {"type": "boolean", "description": "Whether it involves multi-party decisions or conflicting interests that need a face-to-face talk"},
-        "meeting_reason": {"type": "string"},
+        "meeting_reason": {"type": "string", "description": "Max 12 words"},
         "stakeholders": {
             "type": "array",
             "items": {
@@ -122,7 +125,7 @@ ANALYZE_SCHEMA = {
                 "properties": {
                     "name": {"type": "string", "description": "A first name, or 'Requester' for the poster if unnamed"},
                     "role": {"type": "string"},
-                    "cares": {"type": "string", "description": "What this person wants from the result, in a few words"},
+                    "cares": {"type": "string", "description": "What this person wants from the result, max 6 words"},
                 },
                 "required": ["name", "role", "cares"],
             },
@@ -135,10 +138,10 @@ ANALYZE_SCHEMA = {
 CLARIFY_SCHEMA = {
     "type": "object",
     "properties": {
-        "understanding": {"type": "string", "description": "Your understanding of the task goal, updated with every answer so far, in one or two sentences"},
+        "understanding": {"type": "string", "description": "The task goal updated with every answer so far, one sentence, max 15 words"},
         "complete": {"type": "boolean", "description": "True only when no open decision would still change what gets built"},
         "remaining": {"type": "array", "items": {"type": "string"},
-                      "description": "Decisions still open that matter; for 'not sure' answers, include your recommended default"},
+                      "description": "Decisions still open that matter, max 10 words each; for 'not sure' answers, add your default"},
         "questions": ANALYZE_SCHEMA["properties"]["questions"],
         "conflicts": {
             "type": "array",
@@ -146,12 +149,12 @@ CLARIFY_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "topic": {"type": "string", "description": "What the conflict is about, in a few words"},
+                    "topic": {"type": "string", "description": "What the conflict is about, max 5 words"},
                     "sides": {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": {"who": {"type": "string"}, "wants": {"type": "string"}},
+                            "properties": {"who": {"type": "string"}, "wants": {"type": "string", "description": "Max 8 words"}},
                             "required": ["who", "wants"],
                         },
                     },
@@ -160,8 +163,8 @@ CLARIFY_SCHEMA = {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "label": {"type": "string", "description": "A concrete resolution, ideally a compromise"},
-                                "tradeoff": {"type": "string", "description": "What each side gains and gives up"},
+                                "label": {"type": "string", "description": "A concrete resolution, ideally a compromise, max 6 words"},
+                                "tradeoff": {"type": "string", "description": "What each side gains and gives up, max 12 words"},
                             },
                             "required": ["label", "tradeoff"],
                         },
@@ -180,27 +183,30 @@ MAX_ROUNDS = 4  # Hard stop so a demo never loops forever; whatever is still ope
 BRIEF_SCHEMA = {
     "type": "object",
     "properties": {
-        "goal": {"type": "string"},
-        "in_scope": {"type": "array", "items": {"type": "string"}},
-        "out_of_scope": {"type": "array", "items": {"type": "string"}},
-        "acceptance_criteria": {"type": "array", "items": {"type": "string"}, "description": "Checkable acceptance criteria"},
+        "goal": {"type": "string", "description": "One sentence, max 15 words"},
+        "in_scope": {"type": "array", "items": {"type": "string"}, "description": "3-5 items, max 8 words each"},
+        "out_of_scope": {"type": "array", "items": {"type": "string"}, "description": "Max 4 items, max 8 words each"},
+        "acceptance_criteria": {"type": "array", "items": {"type": "string"}, "description": "3-5 checkable criteria, max 10 words each"},
         "subtasks": {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"title": {"type": "string"}, "detail": {"type": "string"}},
+                "properties": {"title": {"type": "string", "description": "Max 5 words"},
+                               "detail": {"type": "string", "description": "Max 12 words"}},
                 "required": ["title", "detail"],
             },
+            "description": "3-6 subtasks",
         },
         "decisions": {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"decision": {"type": "string"}, "source": {"type": "string", "description": "Which question's answer this came from"}},
+                "properties": {"decision": {"type": "string", "description": "Max 10 words"},
+                               "source": {"type": "string", "description": "Just the reference and who, e.g. 'Q3 Anna', 'W1 Ben', 'D1 owner'"}},
                 "required": ["decision", "source"],
             },
         },
-        "open_issues": {"type": "array", "items": {"type": "string"}, "description": "Questions still undecided"},
+        "open_issues": {"type": "array", "items": {"type": "string"}, "description": "Still undecided, max 4 items of max 10 words"},
     },
     "required": ["goal", "in_scope", "out_of_scope", "acceptance_criteria", "subtasks", "decisions", "open_issues"],
 }
@@ -209,9 +215,9 @@ WORKER_SCHEMA = {
     "type": "object",
     "properties": {
         "can_answer": {"type": "boolean", "description": "Whether the brief and existing Q&A give enough basis to answer"},
-        "answer": {"type": "string", "description": "The answer if possible; otherwise explain what is missing"},
+        "answer": {"type": "string", "description": "The answer in max 2 sentences; otherwise what is missing, in one sentence"},
         "source": {"type": "string", "description": "Basis for the answer: which part of the brief, or which past Q&A"},
-        "question_for_requester": {"type": "string", "description": "If it can't be answered, a clear question to forward to a stakeholder"},
+        "question_for_requester": {"type": "string", "description": "If it can't be answered, a clear question for a stakeholder, max 15 words"},
         "ask_who": {"type": "string", "description": "If it can't be answered, the stakeholder who owns that decision, exactly as in the stakeholder list"},
     },
     "required": ["can_answer", "answer", "source", "question_for_requester", "ask_who"],
@@ -278,6 +284,18 @@ def cached(name: str, system: str, content: str, produce) -> dict:
     return data
 
 
+BASE_SKILLS = ("keep-it-short",)  # Applied to every job: people skim, so all on-screen text follows its word budgets
+
+
+def skill_text(names) -> str:
+    """Inline SKILL.md bodies the way the sidecar does, so the direct-API fallback follows the same rules."""
+    out = ""
+    for n in names:
+        body = (Path(__file__).parent / ".agents" / "skills" / n / "SKILL.md").read_text(encoding="utf-8")
+        out += f"\n\n# Skill: {n}\n\n" + re.sub(r"^---[\s\S]*?---\s*", "", body).strip()
+    return out
+
+
 def harness_get(path: str, timeout: float = 3) -> dict:
     with urllib.request.urlopen(HARNESS_URL + path, timeout=timeout) as r:
         return json.loads(r.read())
@@ -325,11 +343,13 @@ def via_harness(job: dict, direct):
 
 
 def call_tool(system: str, content: str, name: str, schema: dict, skills: tuple = ()) -> dict:
+    skills = BASE_SKILLS + tuple(skills)
+
     def direct():
         resp = get_client().chat.completions.create(
             model=MODEL,
             max_tokens=3000,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": content}],
+            messages=[{"role": "system", "content": system + skill_text(skills)}, {"role": "user", "content": content}],
             tools=[{"type": "function", "function": {"name": name, "description": "Output the result in the specified structure", "parameters": schema}}],
             tool_choice={"type": "function", "function": {"name": name}},
             extra_body={"enable_thinking": False},  # Forced tool_choice isn't supported in thinking mode
@@ -388,7 +408,7 @@ def call_agent(system: str, content: str, name: str, workspace: str, out_file: s
         resp = get_client().chat.completions.create(
             model=MODEL,
             max_tokens=8000,
-            messages=[{"role": "system", "content": f"{system} You have no tools: output the whole {out_file} in one code block, with no explanation."},
+            messages=[{"role": "system", "content": f"{system}{skill_text(BASE_SKILLS)}\n\nYou have no tools: output the whole {out_file} in one code block, with no explanation."},
                       {"role": "user", "content": content}],
             extra_body={"enable_thinking": False},
         )
@@ -397,7 +417,7 @@ def call_agent(system: str, content: str, name: str, workspace: str, out_file: s
         return {"file": (m.group(1) if m else text).strip(), "steps": []}
 
     def produce():
-        r = via_harness({"system": system, "prompt": content, "tools": list(tools), "workspace": workspace}, direct)
+        r = via_harness({"system": system, "prompt": content, "tools": list(tools), "workspace": workspace, "skills": list(BASE_SKILLS)}, direct)
         if "file" not in r and not path.exists():
             st.toast(f"pi finished without writing {out_file}, using the direct API")
             r = direct()
@@ -594,6 +614,8 @@ for k, v in {**TASK_DEFAULTS, **KB_DEFAULTS}.items():
     st.session_state.setdefault(k, fresh(v))
 st.session_state.setdefault("project", "Demo Project")
 st.session_state.setdefault("page", PAGES[0])
+st.session_state.setdefault("kb_tab", KB_TABS[0])
+st.session_state.setdefault("kb_layout", KB_LAYOUTS[0])
 S = st.session_state
 
 
@@ -616,8 +638,9 @@ def goto(page: str):
     S.page = page
 
 
-def open_project(name):
+def open_project(name, tab: str = None):
     S.kb_open = name
+    S.kb_tab = tab or KB_TABS[0]
     S.page = "Project Knowledge Base"
 
 
@@ -811,8 +834,12 @@ def project_docs(proj: str) -> list:
     return [d for d in S.docs if d["project"] == proj]
 
 
-def project_doc_md(proj: str) -> str:
-    """Combine all of a project's records into one document: one section per task, each with requirement, brief, demo and all Q&A."""
+DOC_SECTIONS = ["Requirement & understanding", "Task brief", "Requirement demo", "Q&A log"]
+
+
+def project_doc_md(proj: str, task_id=None, sections=DOC_SECTIONS) -> str:
+    """Combine all of a project's records into one document: one section per task, each with requirement, brief, demo and all Q&A.
+    task_id / sections narrow it down for reading in the UI; the AI always gets the full document."""
     info = S.projects[proj]
     docs = project_docs(proj)
     meta = f"Created {info['created']:%Y-%m-%d %H:%M} · Deadline {info['deadline'] or 'not set'}"
@@ -820,17 +847,19 @@ def project_doc_md(proj: str) -> str:
         meta += f" · Last updated {max(d['time'] for d in docs):%m-%d %H:%M}"
     lines = [f"### {proj}", meta]
     for n, tid in enumerate(dict.fromkeys(d.get("task_id") for d in docs), 1):
+        if task_id is not None and tid != task_id:
+            continue
         group = [d for d in docs if d.get("task_id") == tid]
         main = {d["type"]: d for d in group if d["type"] in ("Task", "Brief", "Demo")}
         lines.append(f"#### Task {n}: {group[-1]['task']}")
-        if "Task" in main:
-            lines += ["##### Requirement & understanding", main["Task"]["content"]]
-        if "Brief" in main:
-            lines += ["##### Task brief", main["Brief"]["content"]]
-        if "Demo" in main:
-            lines += ["##### Requirement demo", f"Generated ({main['Demo']['time']:%m-%d %H:%M}); preview or download it under \"Requirement demo\" on this page."]
+        if "Task" in main and DOC_SECTIONS[0] in sections:
+            lines += [f"##### {DOC_SECTIONS[0]}", main["Task"]["content"]]
+        if "Brief" in main and DOC_SECTIONS[1] in sections:
+            lines += [f"##### {DOC_SECTIONS[1]}", main["Brief"]["content"]]
+        if "Demo" in main and DOC_SECTIONS[2] in sections:
+            lines += [f"##### {DOC_SECTIONS[2]}", f"Generated ({main['Demo']['time']:%m-%d %H:%M}); preview or download it in the \"Demo\" tab of this project."]
         qas = [d for d in group if d["type"] == "Q&A"]
-        if qas:
+        if qas and DOC_SECTIONS[3] in sections:
             lines.append(f"##### Q&A log ({len(qas)})")
             lines += [f"**Q: {d['title']}**  \n{d['content']}  \n<small>{d['time']:%m-%d %H:%M}</small>" for d in qas]
     return "\n\n".join(lines)
@@ -868,6 +897,25 @@ CSS = """
 .cover-sub {font-size: .8rem; color: rgba(128,128,128,.95); margin: 2px 0 6px; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;}
 .cover-body .pill {margin: 0 4px 0 0;}
+.cover-meter {height: 4px; border-radius: 2px; background: rgba(128,128,128,.18); margin: 8px 0 2px; overflow: hidden;}
+.cover-meter div {height: 100%; background: #22c55e;}
+.cover-foot {display: flex; justify-content: space-between; white-space: nowrap; font-size: .72rem; color: rgba(128,128,128,.95);}
+.pill.warn {background: rgba(245,158,11,.16); color: #d97706;}
+.pill.bad {background: rgba(239,68,68,.14); color: #dc2626;}
+.pill.ok {background: rgba(34,197,94,.14); color: #16a34a;}
+.ddl {padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.22);}
+.hero {border-radius: 14px; padding: 18px 22px; color: #fff; margin: .4rem 0 1rem; display: flex; gap: 18px; align-items: center;}
+.hero-mark {flex: 0 0 56px; height: 56px; border-radius: 12px; background: rgba(255,255,255,.18); display: flex;
+            align-items: center; justify-content: center; font-size: 1.8rem; font-weight: 700;}
+.hero h2 {margin: 0; padding: 0; color: #fff; font-size: 1.6rem;}
+.hero-meta {font-size: .86rem; opacity: .88; margin-top: 2px;}
+.hero .ddl {margin-left: auto; font-size: .85rem; white-space: nowrap;}
+.task-card-head {display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;}
+.task-card-head b {font-size: 1.02rem;}
+.task-card-head small {color: rgba(128,128,128,.95); margin-left: auto;}
+.qa-row {padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25); font-size: .9rem;}
+.qa-row:last-child {border-bottom: none;}
+.qa-row small {color: rgba(128,128,128,.95);}
 </style>
 """
 
@@ -904,8 +952,21 @@ def bullets(items):
         st.markdown(f"- {i}")
 
 
-def render_brief(b: dict, checkable: bool = False):
-    st.markdown(f"**Goal**: {b['goal']}")
+def render_brief(b: dict, checkable: bool = False, compact: bool = False):
+    """compact: goal, decisions and open issues only; scope, criteria and subtasks go into a Details fold."""
+    if b["goal"]:
+        st.markdown(f"**Goal**: {b['goal']}")
+    if compact:
+        if b["decisions"]:
+            st.markdown("**Decided**")
+            for d in b["decisions"]:
+                st.markdown(f"- {d['decision']} <small>· {d['source']}</small>", unsafe_allow_html=True)
+        if b["open_issues"]:
+            st.markdown("**Still open**")
+            bullets(b["open_issues"])
+        with st.expander("Details: scope, acceptance criteria, subtasks"):
+            render_brief({**b, "goal": "", "decisions": [], "open_issues": []}, checkable)
+        return
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**In scope**")
@@ -950,27 +1011,385 @@ def preset_buttons(questions: list, prefix: str):
     return picked
 
 
-def cover_html(proj: str) -> str:
+def project_color(proj: str) -> str:
+    return COVER_COLORS[int(hashlib.md5(proj.encode("utf-8")).hexdigest(), 16) % len(COVER_COLORS)]
+
+
+def deadline_status(ddl):
+    """(label, pill class) for a deadline: overdue and due within 3 days stand out."""
+    if not ddl:
+        return "No deadline", ""
+    days = (ddl - date.today()).days
+    if days < 0:
+        return f"Overdue {-days}d", "bad"
+    if days == 0:
+        return "Due today", "bad"
+    if days <= 3:
+        return f"Due in {days}d", "warn"
+    return f"Due {ddl:%m-%d}", "ok"
+
+
+def project_stats(proj: str) -> dict:
     docs = project_docs(proj)
-    info = S.projects[proj]
-    n_tasks = len(dict.fromkeys(d.get("task_id") for d in docs))
+    events = [e for e in S.events if e["project"] == proj]
     qas = [d for d in docs if d["type"] == "Q&A"]
-    waiting = sum(d["content"].startswith(WAITING) for d in qas)
-    latest = max(docs, key=lambda d: d["time"]) if docs else None
-    color = COVER_COLORS[int(hashlib.md5(proj.encode("utf-8")).hexdigest(), 16) % len(COVER_COLORS)]
-    ddl = f"Due {info['deadline']:%m-%d}" if info["deadline"] else "No deadline"
-    tags = [f'<span class="pill">{n_tasks} task(s)</span>', f'<span class="pill">{len(qas)} Q&amp;A</span>']
-    if any(d["type"] == "Demo" for d in docs):
-        tags.append('<span class="pill">Has demo</span>')
-    if waiting:
-        tags.append(f'<span class="pill">{WAITING} {waiting}</span>')
-    sub = f"Latest: {latest['task']}" if latest else "No records yet"
+    done = {}
+    for e in events:  # Last state of each checkbox wins
+        if e["type"] in ("Subtask done", "Subtask reopened"):
+            done[(e["task"], e["text"])] = e["type"] == "Subtask done"
+    times = [d["time"] for d in docs] + [e["time"] for e in events]
+    return {
+        "tasks": len(dict.fromkeys(d.get("task_id") for d in docs)),
+        "qas": qas,
+        "waiting": [d for d in qas if d["content"].startswith(WAITING)],
+        "briefs": sum(d["type"] == "Brief" for d in docs),
+        "demos": [d for d in docs if d["type"] == "Demo"],
+        "done": sum(done.values()),
+        "events": events,
+        "updated": max(times) if times else S.projects[proj]["created"],
+        "latest": max(docs, key=lambda d: d["time"])["task"] if docs else "",
+    }
+
+
+def cover_html(proj: str) -> str:
+    ps = project_stats(proj)
+    ddl, ddl_cls = deadline_status(S.projects[proj]["deadline"])
+    tags = [f'<span class="pill">{ps["tasks"]} task(s)</span>', f'<span class="pill">{len(ps["qas"])} Q&amp;A</span>']
+    if ps["demos"]:
+        tags.append('<span class="pill ok">Has demo</span>')
+    if ps["waiting"]:
+        tags.append(f'<span class="pill warn">{len(ps["waiting"])} awaiting answer</span>')
+    # Progress: briefs written out of tasks posted (a task without a brief isn't ready to start)
+    pct = round(100 * ps["briefs"] / ps["tasks"]) if ps["tasks"] else 0
+    sub = f"Latest: {ps['latest']}" if ps["latest"] else "No records yet"
     return (
-        f'<div class="cover"><div class="cover-band" style="background:{color}">'
-        f'<b>{htmllib.escape(proj[:1])}</b><i>{ddl}</i></div>'
+        f'<div class="cover"><div class="cover-band" style="background:{project_color(proj)}">'
+        f'<b>{htmllib.escape(proj[:1])}</b><i class="ddl">{ddl}</i></div>'
         f'<div class="cover-body"><div class="cover-title">{htmllib.escape(proj)}</div>'
-        f'<div class="cover-sub">{htmllib.escape(sub)}</div>{"".join(tags)}</div></div>'
+        f'<div class="cover-sub">{htmllib.escape(sub)}</div>{"".join(tags)}'
+        f'<div class="cover-meter"><div style="width:{pct}%"></div></div>'
+        f'<div class="cover-foot"><span>{ps["briefs"]}/{ps["tasks"]} briefed · {ps["done"]} done</span>'
+        f'<span>{ps["updated"]:%m-%d %H:%M}</span></div></div></div>'
     )
+
+
+def hero_html(proj: str) -> str:
+    info = S.projects[proj]
+    ddl, _ = deadline_status(info["deadline"])
+    ps = project_stats(proj)
+    meta = f"Created {info['created']:%Y-%m-%d %H:%M} · Last updated {ps['updated']:%m-%d %H:%M} · {ps['tasks']} task(s)"
+    return (
+        f'<div class="hero" style="background:{project_color(proj)}"><div class="hero-mark">{htmllib.escape(proj[:1])}</div>'
+        f'<div><h2>{htmllib.escape(proj)}</h2><div class="hero-meta">{meta}</div></div><span class="ddl">{ddl}</span></div>'
+    )
+
+
+def segmented(label_: str, options: list, key: str):
+    """Tab-like switcher whose selection survives reruns (st.tabs jumps back to the first tab after a chat rerun)."""
+    if hasattr(st, "segmented_control"):
+        v = st.segmented_control(label_, options, key=key, label_visibility="collapsed")
+    else:
+        v = st.radio(label_, options, key=key, horizontal=True, label_visibility="collapsed")
+    return v or options[0]
+
+
+# ---------- Knowledge map: floating tree (knowledge base -> projects -> tasks -> records) ----------
+
+KB_MAP_CSS = """
+.kbm {position: relative; width: 100%; border: 1px solid rgba(128,128,128,.25); border-radius: 14px; overflow: hidden;
+      background: radial-gradient(circle, rgba(128,128,128,.16) 1px, transparent 1.2px) 0 0 / 22px 22px;
+      font-family: var(--st-font, "Source Sans Pro", sans-serif); color: var(--st-text-color, #31333f);}
+svg {display: block; touch-action: none; user-select: none;}
+.link {fill: none; stroke-width: 1.6; opacity: .45; transition: opacity .25s, stroke-width .25s;}
+.link.flow {stroke-dasharray: 5 6; animation: flow 1.1s linear infinite; opacity: .8;}
+@keyframes flow {to {stroke-dashoffset: -22;}}
+.node {cursor: default; transition: opacity .25s;}
+.node.act {cursor: pointer;}
+.node .body {transition: transform .25s cubic-bezier(.3,1.6,.5,1);}
+.node:hover .body {transform: scale(1.18);}
+.node text {fill: currentColor; font-size: 12px; pointer-events: none;}
+.node .initial {fill: #fff; font-weight: 700; font-size: 20px;}
+.node .lbl-project {font-weight: 600; font-size: 13px;}
+.node .lbl-root {font-weight: 700; font-size: 14px;}
+.node .lbl-task {font-size: 11.5px; opacity: .85;}
+.halo {fill: none; stroke: #f59e0b; stroke-width: 2; animation: pulse 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center;}
+@keyframes pulse {from {transform: scale(1); opacity: .9;} to {transform: scale(1.9); opacity: 0;}}
+svg.focus .link {opacity: .1;}
+svg.focus .node {opacity: .3;}
+svg.focus .link.hot {opacity: .95; stroke-width: 2.4;}
+svg.focus .node.hot {opacity: 1;}
+.tip {position: absolute; pointer-events: none; max-width: 260px; padding: 8px 11px; border-radius: 10px; font-size: 12.5px;
+      background: var(--st-background-color, #fff); border: 1px solid rgba(128,128,128,.3); box-shadow: 0 6px 22px rgba(0,0,0,.14);
+      opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; line-height: 1.4;}
+.tip.on {opacity: 1; transform: none;}
+.tip b {display: block; font-size: 13px; margin-bottom: 2px;}
+.tip div {opacity: .75;}
+.tip i {display: block; margin-top: 4px; font-style: normal; color: var(--st-primary-color, #4f46e5); font-size: 11.5px;}
+.legend {position: absolute; left: 12px; bottom: 9px; display: flex; gap: 12px; font-size: 11.5px; opacity: .75; flex-wrap: wrap;}
+.legend span::before {content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--c);}
+.hint {position: absolute; right: 12px; top: 9px; font-size: 11.5px; opacity: .55;}
+"""
+
+KB_MAP_JS = r"""
+const NS = 'http://www.w3.org/2000/svg';
+const ITEM = {req: '#a78bfa', brief: '#22c55e', demo: '#3b82f6', qa: '#94a3b8', waiting: '#f59e0b'};
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+export default function (component) {
+  const { data, parentElement, setTriggerValue } = component;
+  const box = parentElement.querySelector('.kbm');
+  if (!box || !data || !data.tree) return;
+  box.replaceChildren();
+  const H = data.height || 560;
+  box.style.height = H + 'px';
+  const svg = el('svg', {width: '100%', height: H}, box);
+  const gLinks = el('g', {}, svg), gNodes = el('g', {}, svg);
+  const tip = document.createElement('div');
+  tip.className = 'tip';
+  box.appendChild(tip);
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  for (const [k, name] of [['req', 'Requirement'], ['brief', 'Brief'], ['demo', 'Demo'], ['qa', 'Q&A'], ['waiting', 'Awaiting answer']]) {
+    const s = document.createElement('span');
+    s.style.setProperty('--c', ITEM[k]);
+    s.textContent = name;
+    legend.appendChild(s);
+  }
+  box.appendChild(legend);
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = data.hint || '';
+  box.appendChild(hint);
+
+  // Flatten the tree; every node floats around an anchor from a radial layout
+  const nodes = [], links = [];
+  (function walk(n, depth, parent) {
+    const node = Object.assign({}, n, {depth, parent, kids: [], ph: Math.random() * 6.28, sp: 0.5 + Math.random() * 0.5, ox: 0, oy: 0});
+    nodes.push(node);
+    if (parent) { parent.kids.push(node); links.push({a: parent, b: node}); }
+    (n.children || []).forEach(c => walk(c, depth + 1, node));
+  })(data.tree, 0, null);
+  const weight = n => (n.w = n.kids.length ? n.kids.reduce((s, k) => s + weight(k), 0) : 1);
+  weight(nodes[0]);
+  // Layout: children of the root sit on a ring; deeper nodes fan out around their own parent, so each project is a cluster
+  function layout() {
+    const W = box.clientWidth || 800, cx = W / 2, cy = H / 2 - 8;
+    const rx = Math.max(W / 2 - 80, 60), ry = H / 2 - 52, m = Math.min(rx, ry);
+    const LEN = [0, 0, Math.min(Math.max(m * 0.5, 70), 170), Math.min(Math.max(m * 0.24, 40), 80)];
+    const root = nodes[0];
+    const single = root.kids.length === 1;  // A lone child sits beside the root so its own fan gets the room
+    root.angle = 0; root.ax = single ? cx - rx * 0.4 : cx; root.ay = cy;
+    let s = -Math.PI / 2;
+    for (const k of root.kids) {
+      const span = 2 * Math.PI * k.w / root.w;
+      const a = single ? 0 : s + span / 2;
+      k.angle = a; k.span = single ? Math.PI * 1.6 : span;
+      k.ax = single ? cx + rx * 0.05 : cx + Math.cos(a) * rx * 0.56;
+      k.ay = single ? cy : cy + Math.sin(a) * ry * 0.56;
+      s += span;
+      fan(k);
+    }
+    function fan(n) {
+      if (!n.kids.length) return;
+      const spread = Math.min(Math.max(n.span, Math.PI * (n.depth === 1 ? 0.9 : 1.1)), 2 * Math.PI * (1 - 1 / (n.kids.length + 1)));
+      const L = LEN[n.depth + 1] || 36;
+      let a0 = n.angle - spread / 2;
+      for (const k of n.kids) {
+        const span = spread * k.w / n.w, a = n.kids.length === 1 ? n.angle : a0 + span / 2;
+        k.angle = a; k.span = span;
+        k.ax = Math.min(Math.max(n.ax + Math.cos(a) * L, 20), W - 20);
+        k.ay = Math.min(Math.max(n.ay + Math.sin(a) * L, 20), H - 40);
+        a0 += span;
+        fan(k);
+      }
+    }
+  }
+  layout();
+
+  const R = {root: 34, project: 26, task: 12, item: 6};
+  for (const l of links) {
+    l.path = el('path', {class: 'link' + (l.b.kind === 'waiting' ? ' flow' : ''), stroke: l.b.kind in ITEM ? ITEM[l.b.kind] : (l.b.color || '#888')}, gLinks);
+  }
+  for (const n of nodes) {
+    const kind = n.kind in ITEM ? 'item' : n.kind;
+    n.r = R[kind];
+    n.g = el('g', {class: 'node' + (n.action ? ' act' : '')}, gNodes);
+    const body = el('g', {class: 'body'}, n.g);
+    if (n.alert) el('circle', {r: n.r, class: 'halo'}, body);
+    if (kind === 'root') {
+      el('circle', {r: n.r, fill: n.color, opacity: .95}, body);
+      el('circle', {r: n.r + 6, fill: 'none', stroke: n.color, 'stroke-opacity': .25, 'stroke-width': 6}, body);
+      el('text', {class: 'initial', 'text-anchor': 'middle', dy: '.35em'}, body).textContent = '📚';
+    } else if (kind === 'project') {
+      el('circle', {r: n.r, fill: n.color}, body);
+      const ring = 2 * Math.PI * (n.r + 5);
+      el('circle', {r: n.r + 5, fill: 'none', stroke: n.color, 'stroke-opacity': .18, 'stroke-width': 3}, body);
+      el('circle', {r: n.r + 5, fill: 'none', stroke: '#22c55e', 'stroke-width': 3, 'stroke-linecap': 'round',
+                    'stroke-dasharray': `${ring * (n.progress || 0)} ${ring}`, transform: 'rotate(-90)'}, body);
+      el('text', {class: 'initial', 'text-anchor': 'middle', dy: '.35em'}, body).textContent = n.initial || '';
+    } else if (kind === 'task') {
+      el('circle', {r: n.r, fill: n.color, 'fill-opacity': .22, stroke: n.color, 'stroke-width': 2.2}, body);
+    } else {
+      el('circle', {r: n.r, fill: ITEM[n.kind]}, body);
+    }
+    if (kind !== 'item') {
+      n.text = el('text', {class: 'lbl-' + kind}, n.g);
+      n.text.textContent = n.label;
+    }
+    // Hover: light up the node, its path to the root and its children
+    n.g.addEventListener('pointerenter', () => {
+      svg.classList.add('focus');
+      const hot = new Set([n, ...n.kids]);
+      for (let p = n.parent; p; p = p.parent) hot.add(p);
+      nodes.forEach(m => m.g.classList.toggle('hot', hot.has(m)));
+      links.forEach(l => l.path.classList.toggle('hot', hot.has(l.a) && hot.has(l.b)));
+      tip.replaceChildren();
+      const b = document.createElement('b');
+      b.textContent = n.title || n.label;
+      tip.appendChild(b);
+      (n.meta || []).forEach(t => { const d = document.createElement('div'); d.textContent = t; tip.appendChild(d); });
+      if (n.action) { const i = document.createElement('i'); i.textContent = n.cta || 'Click to open →'; tip.appendChild(i); }
+      tip.classList.add('on');
+      hovered = n;
+    });
+    n.g.addEventListener('pointerleave', () => {
+      svg.classList.remove('focus');
+      tip.classList.remove('on');
+      hovered = null;
+    });
+    // Drag to rearrange; a press without movement counts as a click
+    n.g.addEventListener('pointerdown', e => {
+      drag = {n, x: e.clientX, y: e.clientY, ox: n.ox, oy: n.oy, moved: false};
+      n.g.setPointerCapture(e.pointerId);
+    });
+    n.g.addEventListener('pointermove', e => {
+      if (!drag || drag.n !== n) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      n.ox = drag.ox + dx;
+      n.oy = drag.oy + dy;
+    });
+    n.g.addEventListener('pointerup', () => {
+      if (drag && drag.n === n && !drag.moved && n.action) setTriggerValue('open', JSON.stringify(n.action));
+      drag = null;
+    });
+  }
+  let drag = null, hovered = null;
+
+  // Animation: nodes fly out from the root, then float gently around their anchors
+  const t0 = performance.now();
+  const ease = k => 1 - Math.pow(1 - Math.min(Math.max(k, 0), 1), 3);
+  let raf;
+  function frame(now) {
+    const t = (now - t0) / 1000, root = nodes[0];
+    for (const n of nodes) {
+      const k = ease((t - n.depth * 0.12) / 0.9);
+      const still = drag && drag.n === n;
+      const amp = n.depth === 0 ? 2 : 3 + n.depth * 1.5;
+      const fx = still ? 0 : Math.sin(t * n.sp + n.ph) * amp, fy = still ? 0 : Math.cos(t * n.sp * 0.8 + n.ph) * amp;
+      n.x = root.ax + (n.ax + n.ox - root.ax) * k + fx;
+      n.y = root.ay + (n.ay + n.oy - root.ay) * k + fy;
+      n.g.setAttribute('transform', `translate(${n.x},${n.y})`);
+      n.g.style.opacity = k < 1 ? k : '';
+      if (n.text) {
+        if (n.depth === 0 || n.kind === 'project') {
+          n.text.setAttribute('x', 0); n.text.setAttribute('y', n.r + 18); n.text.setAttribute('text-anchor', 'middle');
+        } else {
+          // Label points away from the parent; near an edge it drops below the node instead
+          const W = box.clientWidth, out = Math.cos(n.angle) >= 0;
+          const side = out ? (n.x < W - 150 ? 1 : 0) : (n.x > 150 ? -1 : 0);
+          n.text.setAttribute('x', side * (n.r + 6)); n.text.setAttribute('y', side ? 4 : n.r + 14);
+          n.text.setAttribute('text-anchor', side > 0 ? 'start' : side < 0 ? 'end' : 'middle');
+        }
+      }
+    }
+    for (const l of links) {
+      const {a, b} = l, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y;
+      l.path.setAttribute('d', `M${a.x},${a.y} Q${mx - dy * 0.12},${my + dx * 0.12} ${b.x},${b.y}`);
+    }
+    if (hovered) {
+      const W = box.clientWidth, left = Math.min(hovered.x + hovered.r + 12, W - 270);
+      tip.style.left = Math.max(left, 6) + 'px';
+      tip.style.top = Math.max(hovered.y - 20, 6) + 'px';
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
+  const ro = new ResizeObserver(layout);
+  ro.observe(box);
+  return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+}
+"""
+
+if hasattr(st.components, "v2"):
+    kb_map_component = st.components.v2.component("kb_map", html='<div class="kbm"></div>', css=KB_MAP_CSS, js=KB_MAP_JS)
+else:  # Older Streamlit: the map is skipped and the cards are used instead
+    kb_map_component = None
+
+
+def short(text: str, n: int = 24) -> str:
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def map_task_node(proj: str, group: list, color: str) -> dict:
+    qas = [d for d in group if d["type"] == "Q&A"]
+    waiting = [d for d in qas if d["content"].startswith(WAITING)]
+    items = []
+    for d in group:
+        if d["type"] == "Task":
+            items.append({"kind": "req", "label": "Requirement", "meta": [short(d["content"].split("\n\n")[0], 140)],
+                          "action": {"project": proj, "tab": KB_TABS[1]}, "cta": "Click to read the document →"})
+        elif d["type"] == "Brief":
+            items.append({"kind": "brief", "label": "Task brief", "meta": [f"Written {d['time']:%m-%d %H:%M}"],
+                          "action": {"project": proj, "tab": KB_TABS[1]}, "cta": "Click to read the brief →"})
+        elif d["type"] == "Demo":
+            items.append({"kind": "demo", "label": "Requirement demo", "meta": [f"Generated {d['time']:%m-%d %H:%M}"],
+                          "action": {"project": proj, "tab": KB_TABS[2]}, "cta": "Click to try the demo →"})
+    for d in qas[-6:]:  # Keep the map readable: the latest Q&A only
+        w = d in waiting
+        items.append({"kind": "waiting" if w else "qa", "label": d["title"],
+                      "meta": ["Waiting for a stakeholder" if w else short(d["content"], 140)],
+                      "action": {"project": proj, "tab": KB_TABS[0] if w else KB_TABS[1]}})
+    meta = [f"{len(qas)} Q&A" + (f" · {len(waiting)} awaiting answer" if waiting else ""),
+            "Brief written" if any(d["type"] == "Brief" for d in group) else "No brief yet"]
+    return {"kind": "task", "label": short(group[-1]["task"]), "title": group[-1]["task"], "color": color, "meta": meta,
+            "alert": bool(waiting), "action": {"project": proj, "tab": KB_TABS[0]}, "children": items}
+
+
+def map_project_node(proj: str, with_tasks: bool = True) -> dict:
+    ps = project_stats(proj)
+    color = project_color(proj)
+    ddl, _ = deadline_status(S.projects[proj]["deadline"])
+    docs = project_docs(proj)
+    tasks = [map_task_node(proj, [d for d in docs if d.get("task_id") == tid], color)
+             for tid in dict.fromkeys(d.get("task_id") for d in docs)] if with_tasks else []
+    return {
+        "kind": "project", "label": short(proj, 20), "title": proj, "initial": proj[:1], "color": color,
+        "progress": ps["briefs"] / ps["tasks"] if ps["tasks"] else 0, "alert": bool(ps["waiting"]),
+        "meta": [ddl, f"{ps['tasks']} task(s) · {len(ps['qas'])} Q&A · {ps['briefs']} brief(s)",
+                 f"Updated {ps['updated']:%m-%d %H:%M}"] + ([f"⏳ {len(ps['waiting'])} awaiting answer"] if ps["waiting"] else []),
+        "action": {"project": proj, "tab": KB_TABS[0]}, "cta": "Click to open project details →", "children": tasks,
+    }
+
+
+def on_map_click(key: str):
+    hit = (st.session_state.get(key) or {}).get("open")
+    if hit:
+        a = json.loads(hit)
+        if a.get("project") in S.projects:
+            open_project(a["project"], a.get("tab"))
+
+
+def kb_map(tree: dict, key: str, height: int = 560, hint: str = ""):
+    """Floating, draggable tree; clicking a node opens that project (and the matching section)."""
+    kb_map_component(data={"tree": tree, "height": height, "hint": hint}, key=key,
+                     on_open_change=lambda: on_map_click(key))
 
 
 # ---------- Stakeholders page: one step at a time ----------
@@ -1204,14 +1623,14 @@ def brief_step(a: dict):
         st.markdown(f"> {S.task}")
     with right, st.container(border=True):
         label("After: a brief the worker can start on")
-        render_brief(b)
+        render_brief(b, compact=True)
     if st.button("Build clickable demo", type="primary") and build_demo():
         st.rerun()
 
 
 def demo_step(a: dict):
     with st.expander("📋 Task brief"):
-        render_brief(S.brief)
+        render_brief(S.brief, compact=True)
     with st.container(border=True):
         show_demo(S.demo)
     if S.demo_steps:
@@ -1348,25 +1767,68 @@ elif page == "Worker":
 
 else:  # Project Knowledge Base
     if not S.projects:
-        st.info("The knowledge base is empty. After you post a task and generate a brief in the \"Stakeholders\" view, the process is captured here automatically.")
-        st.button("Go post a task →", on_click=goto, args=("Stakeholders",))
+        with st.container(border=True):
+            st.markdown("#### 📚 The knowledge base is empty")
+            st.markdown(
+                "Every project gets **one living document**: the original request, the AI's understanding, the brief, "
+                "the demo and every question asked along the way. Post a task in the \"Stakeholders\" view and it fills itself in."
+            )
+            st.button("Go post a task →", type="primary", on_click=goto, args=("Stakeholders",))
         st.stop()
 
     # ---- Cover list ----
     if S.kb_open not in S.projects:
-        gallery, chat = st.columns([2, 1], gap="large")
+        all_stats = {p: project_stats(p) for p in S.projects}
+        waiting_total = sum(len(v["waiting"]) for v in all_stats.values())
+        m = st.columns(4)
+        m[0].metric("Projects", len(S.projects))
+        m[1].metric("Tasks", sum(v["tasks"] for v in all_stats.values()))
+        m[2].metric("Q&A captured", sum(len(v["qas"]) for v in all_stats.values()))
+        m[3].metric("Awaiting stakeholders", waiting_total)
+
+        st.subheader("All projects")
+        st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on.")
+        f0, f1, f2, f3 = st.columns([2, 3, 2, 2], vertical_alignment="center")
+        with f0:
+            layout = segmented("Layout", KB_LAYOUTS, "kb_layout") if kb_map_component else KB_LAYOUTS[1]
+        query = f1.text_input("Search", key="kb_query", placeholder="🔍 Search projects and tasks", label_visibility="collapsed")
+        sort = f2.selectbox("Sort", KB_SORTS, key="kb_sort", label_visibility="collapsed",
+                            disabled=layout == KB_LAYOUTS[0], help="Card order (the map arranges itself)")
+        only_waiting = f3.toggle("Needs answers", key="kb_waiting_only", disabled=not waiting_total,
+                                 help="Only projects with questions waiting for a stakeholder")
+
+        q_ = query.strip().lower()
+        names = [p for p in S.projects
+                 if (not q_ or q_ in p.lower() or any(q_ in d["task"].lower() for d in project_docs(p)))
+                 and (not only_waiting or all_stats[p]["waiting"])]
+        if sort == "Deadline soonest":
+            names.sort(key=lambda p: S.projects[p]["deadline"] or date.max)
+        elif sort == "Name":
+            names.sort(key=str.lower)
+        else:
+            names.sort(key=lambda p: all_stats[p]["updated"], reverse=True)
+
+        # The map gets the full width with the cross-project chat below it; cards keep the chat in a side column
+        if layout == KB_LAYOUTS[0]:
+            gallery, chat = st.container(), st.container()
+        else:
+            gallery, chat = st.columns([2, 1], gap="large")
         with gallery:
-            st.subheader("All projects")
-            st.caption("One document per project: requirements, briefs, demos and every question are inside, updated automatically as work goes on. Open one for details.")
-            names = sorted(S.projects, key=lambda p: S.projects[p]["created"], reverse=True)
+            if not names:
+                st.info("No project matches the current filter.")
+            elif layout == KB_LAYOUTS[0]:
+                tree = {"kind": "root", "label": "Knowledge base", "color": "#4f46e5",
+                        "meta": [f"{len(names)} project(s) shown", f"{waiting_total} question(s) awaiting a stakeholder"],
+                        "children": [map_project_node(n) for n in names]}
+                kb_map(tree, "kb_map_all", height=600, hint="Hover to explore · drag to move · click to open")
+                names = []  # The map replaces the cards
             per_row = 3
             for start in range(0, len(names), per_row):
                 cols = st.columns(per_row)
                 for col, name in zip(cols, names[start:start + per_row]):
                     with col:
                         st.markdown(cover_html(name), unsafe_allow_html=True)
-                        st.button("View details", key=f"open_{name}", on_click=open_project, args=(name,),
-                                  use_container_width=True)
+                        st.button("Open", key=f"open_{name}", on_click=open_project, args=(name,), use_container_width=True)
 
         with chat:
             st.subheader("Ask all projects")
@@ -1406,78 +1868,152 @@ else:  # Project Knowledge Base
     proj = S.kb_open
     info = S.projects[proj]
     docs = project_docs(proj)
-    events = [e for e in S.events if e["project"] == proj]
-    tasks = list(dict.fromkeys(e["task"] for e in events))
+    ps = project_stats(proj)
+    events = ps["events"]
+    task_ids = list(dict.fromkeys(d.get("task_id") for d in docs))
     doc_md = project_doc_md(proj)
 
     st.button("← All projects", on_click=open_project, args=(None,))
-    st.header(proj)
+    st.markdown(hero_html(proj), unsafe_allow_html=True)
     c = st.columns(5)
-    c[0].metric("Created", f"{info['created']:%m-%d %H:%M}")
-    c[1].metric("Last updated", f"{events[-1]['time']:%m-%d %H:%M}" if events else "—")
-    c[2].metric("Tasks", len(tasks))
-    qas = [d for d in docs if d["type"] == "Q&A"]
-    waiting = sum(d["content"].startswith(WAITING) for d in qas)
-    c[3].metric("Q&A records", len(qas), delta=f"{waiting} awaiting answer" if waiting else None, delta_color="off")
+    c[0].metric("Tasks", ps["tasks"])
+    c[1].metric("Briefs", ps["briefs"])
+    c[2].metric("Q&A records", len(ps["qas"]))
+    c[3].metric("Awaiting answer", len(ps["waiting"]))
     c[4].metric("Until deadline", f"{(info['deadline'] - date.today()).days} days" if info["deadline"] else "Not set")
-    with st.expander("Change deadline"):
-        info["deadline"] = st.date_input("Deadline (inferred by AI from the task description; can be edited)", value=info["deadline"], key=f"ddl_{proj}")
 
-    demos = [d for d in docs if d["type"] == "Demo"]
-    if demos:
-        st.subheader("Requirement demo")
-        for d in demos:
-            with st.expander(f"Task: {d['task']} · {d['time']:%m-%d %H:%M}", expanded=len(demos) == 1):
+    if ps["waiting"]:
+        with st.container(border=True):
+            w1, w2 = st.columns([4, 1], vertical_alignment="center")
+            w1.markdown(f"**⏳ {len(ps['waiting'])} question(s) waiting for a stakeholder**  \n"
+                        + "  \n".join(f"· {htmllib.escape(d['title'])}" for d in ps["waiting"]), unsafe_allow_html=True)
+            w2.button("Answer now →", type="primary", on_click=goto, args=("Stakeholders",), use_container_width=True,
+                      disabled=S.task_project != proj or not S.pending,
+                      help="Pending questions are answered in the Stakeholders view while the task is active")
+
+    tab = segmented("Section", KB_TABS, "kb_tab")
+    st.write("")
+
+    if tab == KB_TABS[0]:  # Overview: the project's map, then one card per task
+        if kb_map_component:
+            kb_map(map_project_node(proj), f"kb_map_{proj}", height=420, hint="Click a task or record to jump to it")
+        for n, tid in enumerate(reversed(task_ids), 1):
+            group = [d for d in docs if d.get("task_id") == tid]
+            kinds = {d["type"] for d in group}
+            qas = [d for d in group if d["type"] == "Q&A"]
+            waiting = [d for d in qas if d["content"].startswith(WAITING)]
+            title = group[-1]["task"]
+            chips = ['<span class="pill ok">Briefed</span>' if "Brief" in kinds else '<span class="pill warn">No brief yet</span>']
+            if "Demo" in kinds:
+                chips.append('<span class="pill ok">Demo</span>')
+            chips.append(f'<span class="pill">{len(qas)} Q&amp;A</span>')
+            if waiting:
+                chips.append(f'<span class="pill warn">{len(waiting)} awaiting</span>')
+            with st.container(border=True):
+                st.markdown(
+                    f'<div class="task-card-head"><b>Task {len(task_ids) - n + 1}: {htmllib.escape(title)}</b>{"".join(chips)}'
+                    f'<small>Updated {max(d["time"] for d in group):%m-%d %H:%M}</small></div>',
+                    unsafe_allow_html=True,
+                )
+                task_doc = next((d for d in group if d["type"] == "Task"), None)
+                if task_doc:
+                    understanding = re.search(r"AI's understanding: (.*)", task_doc["content"])
+                    if understanding:
+                        st.caption(understanding.group(1))
+                l, r = st.columns(2)
+                with l:
+                    label("Answered")
+                    answered = [d for d in qas if d not in waiting][-4:]
+                    if not answered:
+                        st.caption("Nothing yet")
+                    for d in answered:
+                        st.markdown(f'<div class="qa-row"><b>{htmllib.escape(d["title"])}</b><br>'
+                                    f'<small>{htmllib.escape(d["content"])}</small></div>', unsafe_allow_html=True)
+                with r:
+                    label("Still open")
+                    if not waiting:
+                        st.caption("No open questions")
+                    for d in waiting:
+                        st.markdown(f'<div class="qa-row">⏳ {htmllib.escape(d["title"])}</div>', unsafe_allow_html=True)
+                b1, b2, _ = st.columns([1, 1, 3])
+                b1.button("Read document", key=f"ov_doc_{tid}", on_click=open_project, args=(proj, KB_TABS[1]),
+                          use_container_width=True)
+                if "Demo" in kinds:
+                    b2.button("See demo", key=f"ov_demo_{tid}", on_click=open_project, args=(proj, KB_TABS[2]),
+                              use_container_width=True)
+        with st.expander("Change deadline"):
+            info["deadline"] = st.date_input("Deadline (inferred by AI from the task description; can be edited)",
+                                             value=info["deadline"], key=f"ddl_{proj}")
+
+    elif tab == KB_TABS[1]:  # Document: filterable reader + download
+        task_names = {tid: next(d["task"] for d in reversed(docs) if d.get("task_id") == tid) for tid in task_ids}
+        side, body = st.columns([1, 3], gap="large")
+        with side:
+            label("Task")
+            pick = st.radio("Task", [None] + task_ids, key=f"doc_task_{proj}", label_visibility="collapsed",
+                            format_func=lambda t: "All tasks" if t is None else task_names[t])
+            label("Sections")
+            secs = [s_ for s_ in DOC_SECTIONS if st.checkbox(s_, value=True, key=f"doc_sec_{proj}_{s_}")]
+            st.download_button("⬇ Download Markdown", doc_md, file_name=f"{proj}.md", mime="text/markdown",
+                               use_container_width=True, help="Always the full document")
+        with body, st.container(border=True, height=620):
+            shown = project_doc_md(proj, pick, secs)
+            st.markdown("\n\n".join(shown.split("\n\n")[2:]) or "_Nothing to show for this filter._",
+                        unsafe_allow_html=True)  # Title and overview are already in the header
+
+    elif tab == KB_TABS[2]:  # Demo
+        if not ps["demos"]:
+            st.info("No requirement demo for this project yet. Generate one in the Stakeholders view after the brief.")
+        for d in ps["demos"]:
+            with st.expander(f"Task: {d['task']} · {d['time']:%m-%d %H:%M}", expanded=len(ps["demos"]) == 1):
                 show_demo(d["content"], height=500)
+                st.download_button("Download HTML", d["content"], file_name=f"{d['task']}.html", mime="text/html",
+                                   key=f"dl_demo_{d['key']}")
 
-    st.subheader("Project document")
-    c1, c2 = st.columns([3, 1])
-    c1.caption("Requirements, briefs and every question are in this one document, updated automatically as work goes on.")
-    c2.download_button("Download Markdown", doc_md, file_name=f"{proj}.md", mime="text/markdown", use_container_width=True)
-    with st.container(border=True):
-        st.markdown("\n\n".join(doc_md.split("\n\n")[2:]), unsafe_allow_html=True)  # Title and overview are already shown above
+    elif tab == KB_TABS[3]:  # Ask this project
+        st.caption("When someone new takes over or you come back a week later, just ask instead of digging through chat history.")
+        with st.container(height=440):
+            msgs = [m for m in S.kb_chat if m["project"] == proj]
+            if not msgs:
+                st.caption("No questions yet; try one below.")
+            for m in msgs:
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"], unsafe_allow_html=True)
+        sc = scenario_by_project(proj)
+        preset = preset_buttons(sc["kb_qs"] if sc else [], "kq")
+        if q := (st.chat_input("e.g. Which features were finally decided? Which questions are still open?") or preset):
+            S.kb_chat.append({"project": proj, "role": "user", "content": q})
+            try:
+                with st.spinner("Searching…"):
+                    r = answer_kb(proj, info, doc_md, events, q)
+                cites = "; ".join(str(s) for s in r["sources"] if s)
+                msg = r["answer"] if r["found"] else f"Not enough basis in the knowledge base: {r['answer']}"
+                if cites:
+                    msg += f"\n\n<small>Sources: {cites}</small>"
+            except Exception as e:
+                msg = f"Call failed: {e}"
+            S.kb_chat.append({"project": proj, "role": "assistant", "content": msg})
+            st.rerun()
 
-    st.subheader("Ask the knowledge base")
-    st.caption("When someone new takes over or you come back a week later, just ask instead of digging through chat history.")
-    for m in S.kb_chat:
-        if m["project"] == proj:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"], unsafe_allow_html=True)
-    sc = scenario_by_project(proj)
-    preset = preset_buttons(sc["kb_qs"] if sc else [], "kq")
-    if q := (st.chat_input("e.g. Which features were finally decided? Which questions are still open?") or preset):
-        S.kb_chat.append({"project": proj, "role": "user", "content": q})
-        try:
-            with st.spinner("Searching…"):
-                r = answer_kb(proj, info, doc_md, events, q)
-            cites = "; ".join(str(s) for s in r["sources"] if s)
-            msg = r["answer"] if r["found"] else f"Not enough basis in the knowledge base: {r['answer']}"
-            if cites:
-                msg += f"\n\n<small>Sources: {cites}</small>"
-        except Exception as e:
-            msg = f"Call failed: {e}"
-        S.kb_chat.append({"project": proj, "role": "assistant", "content": msg})
-        st.rerun()
-
-    st.subheader("Project timeline")
-    if events:
-        df = pd.DataFrame(events)
-        df["Time"] = df["time"].dt.strftime("%m-%d %H:%M:%S")
-        span = df.groupby("task", sort=False)["time"].agg(["min", "max"]).reset_index()
-        y = alt.Y("task:N", title=None, sort=tasks)
-        x_scale = alt.Scale(type="utc")  # Times have no time zone; show them as-is so the browser doesn't convert them again
-        spans = alt.Chart(span).mark_rule(strokeWidth=8, opacity=0.2).encode(
-            x=alt.X("min:T", scale=x_scale, title=None), x2="max:T", y=y
-        )
-        dots = alt.Chart(df).mark_circle(size=160, opacity=0.9).encode(
-            x=alt.X("time:T", scale=x_scale),
-            y=y,
-            color=alt.Color("type:N", title="Event"),
-            tooltip=[alt.Tooltip("Time:N"), alt.Tooltip("type:N", title="Event"), alt.Tooltip("text:N", title="Details")],
-        )
-        st.altair_chart((spans + dots).properties(height=80 + 50 * len(tasks)), width="stretch")
-        with st.expander("Event details"):
+    else:  # Timeline
+        if events:
+            tasks = list(dict.fromkeys(e["task"] for e in events))
+            df = pd.DataFrame(events)
+            df["Time"] = df["time"].dt.strftime("%m-%d %H:%M:%S")
+            span = df.groupby("task", sort=False)["time"].agg(["min", "max"]).reset_index()
+            y = alt.Y("task:N", title=None, sort=tasks)
+            x_scale = alt.Scale(type="utc")  # Times have no time zone; show them as-is so the browser doesn't convert them again
+            spans = alt.Chart(span).mark_rule(strokeWidth=8, opacity=0.2).encode(
+                x=alt.X("min:T", scale=x_scale, title=None), x2="max:T", y=y
+            )
+            dots = alt.Chart(df).mark_circle(size=160, opacity=0.9).encode(
+                x=alt.X("time:T", scale=x_scale),
+                y=y,
+                color=alt.Color("type:N", title="Event"),
+                tooltip=[alt.Tooltip("Time:N"), alt.Tooltip("type:N", title="Event"), alt.Tooltip("text:N", title="Details")],
+            )
+            st.altair_chart((spans + dots).properties(height=80 + 50 * len(tasks)), width="stretch")
             table = df[["Time", "task", "type", "text"]].rename(columns={"task": "Task", "type": "Event", "text": "Details"})
             st.dataframe(table.iloc[::-1], hide_index=True, width="stretch")
-    else:
-        st.caption("No events yet")
+        else:
+            st.caption("No events yet")

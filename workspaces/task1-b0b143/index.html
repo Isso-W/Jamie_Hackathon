@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Task Board</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#333;height:100vh;display:flex;flex-direction:column}
+header{background:#fff;padding:10px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+header h1{font-size:18px;font-weight:700}
+.header-actions{display:flex;gap:8px;align-items:center}
+.role-badge{font-size:11px;padding:3px 8px;border-radius:12px;background:#e8f5e9;color:#2e7d32;font-weight:600}
+.btn{padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-primary{background:#4a90d9;color:#fff}.btn-primary:hover{background:#357abd}
+.btn-export{background:#34a853;color:#fff}.btn-export:hover{background:#2d9249}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.board{display:flex;gap:12px;padding:12px;flex:1;overflow-x:auto;min-height:0}
+.column{background:#ebecf0;border-radius:8px;width:33.33%;min-width:220px;display:flex;flex-direction:column;max-height:100%}
+.column-header{padding:10px 12px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.column-header .count{background:#ccc;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600}
+.cards{padding:6px;overflow-y:auto;flex:1;min-height:40px}
+.card{background:#fff;border-radius:6px;padding:10px;margin-bottom:8px;box-shadow:0 1px 2px rgba(0,0,0,.1);cursor:grab;transition:box-shadow .15s}
+.card:hover{box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.card.dragging{opacity:.5}
+.card-title{font-size:13px;font-weight:600;margin-bottom:6px}
+.card-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#666}
+.card-assignee{display:flex;align-items:center;gap:4px}
+.avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;flex-shrink:0}
+.card-due{font-size:11px}
+.card-due.overdue{color:#d32f2f;font-weight:600}
+.status-select{margin-top:6px;width:100%;padding:3px;font-size:11px;border:1px solid #ddd;border-radius:4px}
+.slack-log{background:#fff;border-top:1px solid #ddd;padding:6px 20px;font-size:11px;color:#555;flex-shrink:0;max-height:60px;overflow-y:auto}
+.slack-log div{padding:1px 0}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:10px;padding:20px;width:340px;max-width:90vw}
+.modal h2{font-size:16px;margin-bottom:12px}
+.modal label{display:block;font-size:12px;font-weight:600;margin:8px 0 3px;color:#555}
+.modal input,.modal select{width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;font-size:13px}
+.modal-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+.toast{position:fixed;bottom:20px;right:20px;background:#323232;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+details.summary-section{padding:8px 20px;font-size:11px;color:#777;border-top:1px solid #eee;flex-shrink:0}
+details.summary-section summary{cursor:pointer;font-weight:600}
+details.summary-section ul{margin:4px 0 0 16px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📋 Team Task Board</h1>
+  <div class="header-actions">
+    <span class="role-badge" id="roleBadge">Team Lead</span>
+    <select id="roleSwitch" style="font-size:11px;padding:3px;border-radius:4px;border:1px solid #ccc">
+      <option value="lead">View as: Team Lead</option>
+      <option value="member">View as: Member</option>
+      <option value="manager">View as: Manager</option>
+    </select>
+    <button class="btn btn-primary" id="addTaskBtn">+ New Task</button>
+    <button class="btn btn-export" id="exportCsvBtn">Export CSV</button>
+  </div>
+</header>
+
+<div class="board" id="board">
+  <div class="column" data-status="todo">
+    <div class="column-header">To Do <span class="count" id="count-todo">0</span></div>
+    <div class="cards" id="col-todo"></div>
+  </div>
+  <div class="column" data-status="doing">
+    <div class="column-header">Doing <span class="count" id="count-doing">0</span></div>
+    <div class="cards" id="col-doing"></div>
+  </div>
+  <div class="column" data-status="done">
+    <div class="column-header">Done <span class="count" id="count-done">0</span></div>
+    <div class="cards" id="col-done"></div>
+  </div>
+</div>
+
+<div class="slack-log" id="slackLog"><strong>#team-channel</strong> — Slack notifications appear here</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>Create New Task</h2>
+    <label>Task Title</label>
+    <input type="text" id="taskTitle" placeholder="e.g. Design homepage mockup">
+    <label>Assignee</label>
+    <select id="taskAssignee">
+      <option value="Alice">Alice</option>
+      <option value="Bob">Bob</option>
+      <option value="Carol">Carol</option>
+      <option value="Dave">Dave</option>
+    </select>
+    <label>Due Date</label>
+    <input type="date" id="taskDue">
+    <label>Status</label>
+    <select id="taskStatus">
+      <option value="todo">To Do</option>
+      <option value="doing">Doing</option>
+      <option value="done">Done</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn" id="cancelBtn" style="background:#eee">Cancel</button>
+      <button class="btn btn-primary" id="saveTaskBtn">Create Task</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<details class="summary-section">
+  <summary>Built from your answers</summary>
+  <ul>
+    <li><strong>Notion-style board</strong> — Q1 Requester (host platform)</li>
+    <li><strong>To Do / Doing / Done columns</strong> — Q2 Requester (statuses)</li>
+    <li><strong>Slack notifications on status change</strong> — Q3, Q4, Q7 Requester</li>
+    <li><strong>Assignee + due date on cards</strong> — Q5 Team Members</li>
+    <li><strong>CSV export for Manager</strong> — Q6, Q8 Manager (weekly automated)</li>
+    <li><strong>Team Lead only creates/assigns tasks</strong> — Q9 Requester</li>
+  </ul>
+</details>
+
+<script>
+const COLORS = {Alice:'#4a90d9',Bob:'#e67e22',Carol:'#9b59b6',Dave:'#27ae60'};
+let currentRole = 'lead';
+
+let tasks = [
+  {id:1,title:'Design homepage mockup',assignee:'Alice',due:'2025-02-10',status:'todo'},
+  {id:2,title:'Set up CI/CD pipeline',assignee:'Bob',due:'2025-02-08',status:'doing'},
+  {id:3,title:'Write API documentation',assignee:'Carol',due:'2025-02-12',status:'todo'},
+  {id:4,title:'User testing round 1',assignee:'Dave',due:'2025-02-05',status:'done'},
+  {id:5,title:'Fix login bug',assignee:'Bob',due:'2025-02-06',status:'doing'},
+  {id:6,title:'Update dependencies',assignee:'Alice',due:'2025-02-15',status:'todo'}
+];
+let nextId = 7;
+
+function render() {
+  ['todo','doing','done'].forEach(s => {
+    const col = document.getElementById('col-'+s);
+    col.innerHTML = '';
+    const filtered = tasks.filter(t=>t.status===s);
+    document.getElementById('count-'+s).textContent = filtered.length;
+    filtered.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.draggable = true;
+      card.dataset.id = t.id;
+      const overdue = t.status!=='done' && new Date(t.due) < new Date() ? ' overdue':'';
+      card.innerHTML = `
+        <div class="card-title">${esc(t.title)}</div>
+        <div class="card-meta">
+          <span class="card-assignee"><span class="avatar" style="background:${COLORS[t.assignee]||'#999'}">${t.assignee[0]}</span>${esc(t.assignee)}</span>
+          <span class="card-due${overdue}">📅 ${t.due}</span>
+        </div>
+        <select class="status-select" data-id="${t.id}">
+          <option value="todo"${t.status==='todo'?' selected':''}>To Do</option>
+          <option value="doing"${t.status==='doing'?' selected':''}>Doing</option>
+          <option value="done"${t.status==='done'?' selected':''}>Done</option>
+        </select>`;
+      col.appendChild(card);
+    });
+  });
+  updateButtons();
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function updateButtons() {
+  const isLead = currentRole === 'lead';
+  const isManager = currentRole === 'manager';
+  document.getElementById('addTaskBtn').disabled = !isLead;
+  document.getElementById('addTaskBtn').title = isLead ? 'Create new task (Team Lead)' : 'Only Team Lead can create tasks';
+  document.getElementById('exportCsvBtn').disabled = !isManager;
+  document.getElementById('exportCsvBtn').title = isManager ? 'Export weekly CSV report' : 'Only Manager can export CSV';
+  document.getElementById('roleBadge').textContent = currentRole==='lead'?'Team Lead':currentRole==='manager'?'Manager':'Member';
+}
+
+function logSlack(msg) {
+  const log = document.getElementById('slackLog');
+  const d = document.createElement('div');
+  const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  d.textContent = `[${time}] 🔔 ${msg}`;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// Status change via dropdown
+document.getElementById('board').addEventListener('change', e => {
+  if (!e.target.classList.contains('status-select')) return;
+  const id = +e.target.dataset.id;
+  const task = tasks.find(t=>t.id===id);
+  if (!task) return;
+  const oldStatus = task.status;
+  const newStatus = e.target.value;
+  if (oldStatus === newStatus) return;
+  task.status = newStatus;
+  const labels = {todo:'To Do',doing:'Doing',done:'Done'};
+  logSlack(`"${task.title}" moved ${labels[oldStatus]} → ${labels[newStatus]} (by ${task.assignee})`);
+  render();
+});
+
+// Drag and drop
+let dragId = null;
+document.getElementById('board').addEventListener('dragstart', e => {
+  if (!e.target.classList.contains('card')) return;
+  dragId = +e.target.dataset.id;
+  e.target.classList.add('dragging');
+});
+document.getElementById('board').addEventListener('dragend', e => {
+  if (e.target.classList.contains('card')) e.target.classList.remove('dragging');
+  dragId = null;
+});
+document.querySelectorAll('.cards').forEach(col => {
+  col.addEventListener('dragover', e => e.preventDefault());
+  col.addEventListener('drop', e => {
+    e.preventDefault();
+    if (dragId == null) return;
+    const newStatus = col.parentElement.dataset.status;
+    const task = tasks.find(t=>t.id===dragId);
+    if (!task || task.status === newStatus) return;
+    const oldStatus = task.status;
+    task.status = newStatus;
+    const labels = {todo:'To Do',doing:'Doing',done:'Done'};
+    logSlack(`"${task.title}" moved ${labels[oldStatus]} → ${labels[newStatus]}`);
+    render();
+  });
+});
+
+// Role switch
+document.getElementById('roleSwitch').addEventListener('change', e => {
+  currentRole = e.target.value;
+  render();
+});
+
+// Modal
+const overlay = document.getElementById('modalOverlay');
+document.getElementById('addTaskBtn').addEventListener('click', () => {
+  if (currentRole !== 'lead') return;
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDue').value = '';
+  overlay.classList.add('active');
+});
+document.getElementById('cancelBtn').addEventListener('click', () => overlay.classList.remove('active'));
+overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('active'); });
+
+document.getElementById('saveTaskBtn').addEventListener('click', () => {
+  const title = document.getElementById('taskTitle').value.trim();
+  const assignee = document.getElementById('taskAssignee').value;
+  const due = document.getElementById('taskDue').value;
+  const status = document.getElementById('taskStatus').value;
+  if (!title) { showToast('Please enter a task title'); return; }
+  if (!due) { showToast('Please select a due date'); return; }
+  tasks.push({id:nextId++,title,assignee,due,status});
+  logSlack(`New task created: "${title}" assigned to ${assignee} (${status==='todo'?'To Do':status==='doing'?'Doing':'Done'})`);
+  overlay.classList.remove('active');
+  render();
+  showToast('Task created');
+});
+
+// CSV Export
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  if (currentRole !== 'manager') return;
+  let csv = 'ID,Title,Assignee,Due Date,Status\n';
+  tasks.forEach(t => {
+    csv += `${t.id},"${t.title.replace(/"/g,'""')}",${t.assignee},${t.due},${t.status}\n`;
+  });
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `task-report-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported');
+  logSlack('Weekly CSV report exported by Manager');
+});
+
+render();
+</script>
+</body>
+</html>
